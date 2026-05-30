@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require("fs");
 const path = require("path");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } = require("electron");
 
 let overlayWindow = null;
@@ -58,6 +58,98 @@ function getGroqTextApiKey() {
     process.env.GROQ_API_KEY ||
     readEnvValue("GROQ_API_KEY")
   );
+}
+
+function getGoogleTtsApiKey() {
+  return (
+    process.env.GOOGLE_TTS_API_KEY ||
+    readEnvValue("GOOGLE_TTS_API_KEY") ||
+    process.env.GOOGLE_API_KEY ||
+    readEnvValue("GOOGLE_API_KEY")
+  );
+}
+
+function safeVoiceText(input) {
+  return String(input || "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 450);
+}
+
+async function speakWithCloudTts(text) {
+  const googleTtsApiKey = getGoogleTtsApiKey();
+  if (!googleTtsApiKey) {
+    return { ok: false, reason: "GOOGLE_TTS_API_KEY is missing." };
+  }
+
+  const spokenText = safeVoiceText(text);
+  if (!spokenText) {
+    return { ok: false, reason: "No text available to speak." };
+  }
+
+  const outputFile = path.join(app.getPath("temp"), `ai-buddy-${Date.now()}.wav`);
+  const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(googleTtsApiKey)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      input: {
+        text: spokenText,
+      },
+      voice: {
+        languageCode: "en-US",
+        name: "en-US-Neural2-C",
+      },
+      audioConfig: {
+        audioEncoding: "LINEAR16",
+        speakingRate: 1,
+        pitch: 0,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { ok: false, reason: `Google TTS failed (${response.status}): ${body}` };
+  }
+
+  const data = await response.json();
+  if (!data.audioContent) {
+    return { ok: false, reason: "Google TTS returned no audio content." };
+  }
+
+  await fs.promises.writeFile(outputFile, Buffer.from(data.audioContent, "base64"));
+
+  await new Promise((resolve, reject) => {
+    const playScript = `
+try {
+  $player = New-Object System.Media.SoundPlayer '${outputFile.replace(/\\/g, "\\\\")}'
+  $player.PlaySync()
+  Write-Output "OK"
+} catch {
+  Write-Output "ERR"
+}
+`;
+
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", playScript],
+      { windowsHide: true, timeout: 30000 },
+      (error, stdout) => {
+        if (error || String(stdout || "").trim() !== "OK") {
+          reject(error || new Error("Audio playback failed."));
+          return;
+        }
+
+        resolve();
+      },
+    );
+  });
+
+  fs.promises.unlink(outputFile).catch(() => {});
+  return { ok: true };
 }
 
 function runCommand(command) {
@@ -302,16 +394,21 @@ app.whenReady().then(() => {
         message = executeVoiceCommandFallback(transcript);
       }
 
+      const speechResult = await speakWithCloudTts(message);
+      const finalMessage = speechResult.ok ? message : `${message} (TTS unavailable: ${speechResult.reason})`;
+
       return {
         ok: true,
         transcript,
-        message,
+        message: finalMessage,
       };
     } catch (error) {
+      const fallbackErrorMessage = `Voice pipeline error: ${error.message}`;
+      await speakWithCloudTts(fallbackErrorMessage).catch(() => {});
       return {
         ok: false,
         transcript: "",
-        message: `Voice pipeline error: ${error.message}`,
+        message: fallbackErrorMessage,
       };
     }
   });
