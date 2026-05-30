@@ -26,10 +26,35 @@
         filter: drop-shadow(0 0 8px rgba(37, 99, 235, 0.55));
         will-change: transform;
       }
+
+      #assistant-status {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        max-width: 360px;
+        padding: 10px 12px;
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.72);
+        color: #dbeafe;
+        font-family: "Segoe UI", sans-serif;
+        font-size: 12px;
+        line-height: 1.35;
+        pointer-events: none;
+        backdrop-filter: blur(7px);
+      }
+
+      #assistant-status strong {
+        color: #93c5fd;
+      }
     </style>
   </head>
   <body>
     <div id="secondary-cursor" aria-hidden="true"></div>
+    <div id="assistant-status">
+      <strong>Voice Assistant</strong><br />
+      Press Ctrl+Shift+V to listen.
+    </div>
     <script src="./overlay.js"></script>
   </body>
 </html>
