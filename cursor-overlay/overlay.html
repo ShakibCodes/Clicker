@@ -27,6 +27,38 @@
         will-change: transform;
       }
 
+      #secondary-cursor.clicking {
+        filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.95));
+      }
+
+      #click-ring {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(125, 211, 252, 0.95);
+        border-radius: 999px;
+        opacity: 0;
+        transform: translate3d(0, 0, 0) scale(0.42);
+        pointer-events: none;
+      }
+
+      #click-ring.active {
+        animation: click-ping 0.58s ease-out forwards;
+      }
+
+      @keyframes click-ping {
+        0% {
+          opacity: 0.9;
+          transform: translate3d(var(--x, 0), var(--y, 0), 0) scale(0.4);
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--x, 0), var(--y, 0), 0) scale(2.1);
+        }
+      }
+
       #assistant-status {
         position: fixed;
         right: 18px;
@@ -51,6 +83,7 @@
   </head>
   <body>
     <div id="secondary-cursor" aria-hidden="true"></div>
+    <div id="click-ring" aria-hidden="true"></div>
     <div id="assistant-status">
       <strong>Voice Assistant</strong><br />
       Press Ctrl+Shift+V to listen.

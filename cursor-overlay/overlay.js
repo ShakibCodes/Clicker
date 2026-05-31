@@ -2,6 +2,7 @@
 const { desktopCapturer, ipcRenderer } = require("electron");
 
 const cursor = document.getElementById("secondary-cursor");
+const clickRing = document.getElementById("click-ring");
 const statusPanel = document.getElementById("assistant-status");
 
 let targetX = window.innerWidth / 2;
@@ -11,6 +12,8 @@ let currentY = targetY;
 let latestScreenFrame = null;
 let isListening = false;
 let currentAssistantAudio = null;
+let isGuidedTourRunning = false;
+let isGuidedControlActive = false;
 
 const sideOffsetX = 42;
 const sideOffsetY = 28;
@@ -18,6 +21,9 @@ const captureIntervalMs = 2500;
 const recordingMs = 4500;
 
 ipcRenderer.on("cursor:position", (_event, payload) => {
+  if (isGuidedControlActive) {
+    return;
+  }
   targetX = payload.x;
   targetY = payload.y;
 });
@@ -208,6 +214,96 @@ async function listenOnce() {
 
 ipcRenderer.on("assistant:toggle-listening", () => {
   void listenOnce();
+});
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitUntilCursorNearTarget(maxWaitMs = 2200) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const dx = Math.abs(targetX - currentX);
+    const dy = Math.abs(targetY - currentY);
+    if (dx < 14 && dy < 14) {
+      return;
+    }
+    await sleep(16);
+  }
+}
+
+function showClickCue(x, y) {
+  cursor.classList.add("clicking");
+  clickRing.classList.remove("active");
+  clickRing.style.setProperty("--x", `${x + sideOffsetX - 9}px`);
+  clickRing.style.setProperty("--y", `${y + sideOffsetY - 9}px`);
+  void clickRing.offsetWidth;
+  clickRing.classList.add("active");
+  setTimeout(() => {
+    cursor.classList.remove("clicking");
+  }, 320);
+}
+
+async function speakStep(stepText) {
+  const tts = await ipcRenderer.invoke("assistant:speak-text", stepText);
+  if (tts?.ok && tts.audioBase64) {
+    await playAssistantAudio({
+      audioBase64: tts.audioBase64,
+      mimeType: tts.mimeType || "audio/mpeg",
+    });
+  } else {
+    await sleep(1600);
+  }
+}
+
+ipcRenderer.on("assistant:guided-tour", async (_event, payload) => {
+  if (isGuidedTourRunning) {
+    return;
+  }
+
+  const steps = Array.isArray(payload?.steps) ? payload.steps : [];
+  const software = payload?.software || "this software";
+  if (steps.length === 0) {
+    return;
+  }
+
+  isGuidedTourRunning = true;
+  isGuidedControlActive = true;
+
+  try {
+    setStatus(`Guided tour started for ${software}.`);
+
+    for (let i = 0; i < steps.length; i += 1) {
+      const step = steps[i];
+      if (!step || typeof step.x !== "number" || typeof step.y !== "number") {
+        continue;
+      }
+
+      targetX = step.x;
+      targetY = step.y;
+      await waitUntilCursorNearTarget();
+
+      const stepLabel = `Step ${i + 1}/${steps.length}`;
+      const needsClick = Boolean(step.click);
+      const actionLabel = needsClick ? "Click here" : "Look here";
+      setStatus(`${stepLabel} - ${actionLabel}<br />${step.text || "Review this area."}`);
+      await sleep(900);
+      if (needsClick) {
+        showClickCue(step.x, step.y);
+      }
+      await speakStep(`${stepLabel}. ${actionLabel}. ${step.text || "Review this area."}`);
+      await sleep(180);
+    }
+
+    setStatus(`Guided tour finished for ${software}. Press Ctrl+Shift+V for another command.`);
+  } catch (error) {
+    setStatus(`Guided tour issue: ${error.message}`);
+  } finally {
+    isGuidedTourRunning = false;
+    isGuidedControlActive = false;
+  }
 });
 
 setInterval(() => {

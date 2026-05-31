@@ -7,6 +7,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } = require("
 let overlayWindow = null;
 let tickInterval = null;
 let latestCursorPoint = { x: 0, y: 0 };
+let overlayBounds = null;
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -181,7 +182,7 @@ async function planActionWithGroq(transcript, context) {
   }
 
   const systemPrompt =
-    "You are an assistant that returns strict JSON only. Choose one action from: open_notepad, open_calculator, open_vscode, search_web, open_website, none. Return keys: action, argument, reply.";
+    "You are an assistant that returns strict JSON only. Choose one action from: open_notepad, open_calculator, open_vscode, search_web, open_website, explain_software, none. Return keys: action, argument, reply.";
 
   const userPrompt = JSON.stringify({
     transcript,
@@ -216,37 +217,120 @@ async function planActionWithGroq(transcript, context) {
   return JSON.parse(raw);
 }
 
+async function planVisualGuidedTourWithGroq(softwareName, context) {
+  const apiKey = getGroqTextApiKey();
+  const screenFrame = String(context?.screenFrame || "");
+
+  if (!apiKey) {
+    throw new Error("Missing GROQ_AI_API_FOR_TEXT in .env.local or environment.");
+  }
+
+  if (!screenFrame.startsWith("data:image")) {
+    throw new Error("No recent screen frame is available for visual guided tour.");
+  }
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      temperature: 0.15,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return strict JSON only with shape: {steps:[{x:number,y:number,text:string,click:boolean}]}. x and y must be normalized between 0 and 1. click=true means user should click there now; click=false means informational pointing only. Based on the screenshot, identify key UI regions for explaining the target software and produce 4-7 concise steps.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Target software: ${softwareName}. Point to visible UI parts in this screenshot and explain each part. Keep step text short and practical.`,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: screenFrame,
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Groq visual planner failed (${response.status}): ${body}`);
+  }
+
+  const data = await response.json();
+  const raw = data.choices?.[0]?.message?.content || "{}";
+  const parsed = JSON.parse(raw);
+  const inputSteps = Array.isArray(parsed?.steps) ? parsed.steps : [];
+
+  const steps = inputSteps
+    .map((step) => ({
+      x: Number(step?.x),
+      y: Number(step?.y),
+      text: String(step?.text || "").trim(),
+      click: Boolean(step?.click),
+    }))
+    .filter((step) => Number.isFinite(step.x) && Number.isFinite(step.y) && step.x >= 0 && step.x <= 1 && step.y >= 0 && step.y <= 1)
+    .slice(0, 7);
+
+  if (steps.length === 0) {
+    throw new Error("Visual guided planner returned no valid steps.");
+  }
+
+  return steps;
+}
+
 function executePlannedAction(plan) {
   const action = (plan?.action || "none").toString();
   const argument = (plan?.argument || "").toString().trim();
 
   if (action === "open_notepad") {
     runCommand("start notepad");
-    return "Opening Notepad.";
+    return { message: "Opening Notepad." };
   }
 
   if (action === "open_calculator") {
     runCommand("start calc");
-    return "Opening Calculator.";
+    return { message: "Opening Calculator." };
   }
 
   if (action === "open_vscode") {
     runCommand("start code");
-    return "Opening VS Code.";
+    return { message: "Opening VS Code." };
   }
 
   if (action === "search_web" && argument) {
     shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(argument)}`);
-    return `Searching for ${argument}.`;
+    return { message: `Searching for ${argument}.` };
   }
 
   if (action === "open_website" && argument) {
     const fullUrl = argument.startsWith("http") ? argument : `https://${argument}`;
     shell.openExternal(fullUrl);
-    return `Opening ${fullUrl}.`;
+    return { message: `Opening ${fullUrl}.` };
   }
 
-  return plan?.reply || "I understood you, but no safe action was executed.";
+  if (action === "explain_software") {
+    return {
+      message: `Starting a guided walkthrough of ${argument || "this software"}. Watch the secondary cursor as it points through the interface.`,
+      suppressFinalTts: true,
+      shouldStartGuidedTour: true,
+      softwareName: argument || "this software",
+    };
+  }
+
+  return { message: plan?.reply || "I understood you, but no safe action was executed." };
 }
 
 function executeVoiceCommandFallback(transcript) {
@@ -280,7 +364,80 @@ function executeVoiceCommandFallback(transcript) {
     return `Opening ${fullUrl}.`;
   }
 
+  if (normalized.startsWith("explain ")) {
+    const softwareName = normalized.replace("explain ", "").replace("software", "").trim();
+    return `Starting a guided walkthrough of ${softwareName || "this app"}.`;
+  }
+
   return "I heard you, but that command is not in the current safe command set yet.";
+}
+
+function normalizeSoftwareName(raw) {
+  return String(raw || "")
+    .toLowerCase()
+    .replace(/[^\w\s.+-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildTourTemplates(softwareName) {
+  const name = normalizeSoftwareName(softwareName);
+  const common = [
+    { x: 0.05, y: 0.07, text: "Top-left area: this is usually where app identity, menus, or quick actions live.", click: false },
+    { x: 0.5, y: 0.09, text: "Top bar: most software keeps global controls and context up here.", click: false },
+    { x: 0.09, y: 0.28, text: "Left side: this zone often contains navigation, tools, or project shortcuts.", click: true },
+    { x: 0.52, y: 0.43, text: "Center workspace: this is the main area where your core work happens.", click: false },
+    { x: 0.77, y: 0.83, text: "Bottom-right area: this typically shows status, notifications, or utility actions.", click: true },
+  ];
+
+  if (name.includes("vscode") || name.includes("vs code") || name.includes("visual studio code")) {
+    return [
+      { x: 0.02, y: 0.26, text: "Activity Bar: switch between Explorer, Search, Source Control, Run, and Extensions.", click: true },
+      { x: 0.15, y: 0.3, text: "Explorer panel: your file tree and folders live here for quick navigation.", click: true },
+      { x: 0.5, y: 0.43, text: "Editor area: this is where you open and edit code files.", click: false },
+      { x: 0.5, y: 0.08, text: "Tab and title zone: shows open files and editor context.", click: false },
+      { x: 0.5, y: 0.95, text: "Status bar: Git branch, errors, formatter, and environment info appear here.", click: true },
+    ];
+  }
+
+  if (name.includes("chrome") || name.includes("browser") || name.includes("edge") || name.includes("firefox")) {
+    return [
+      { x: 0.16, y: 0.08, text: "Tab row: open pages are shown here and can be reordered.", click: true },
+      { x: 0.47, y: 0.13, text: "Address bar: type URLs, search queries, or browser commands here.", click: true },
+      { x: 0.93, y: 0.13, text: "Profile and menu controls are usually grouped on the top-right.", click: true },
+      { x: 0.5, y: 0.45, text: "Main content pane: this is the active webpage area.", click: false },
+      { x: 0.04, y: 0.13, text: "Back, forward, and refresh controls let you navigate page history.", click: true },
+    ];
+  }
+
+  return common;
+}
+
+async function startSoftwareGuidedTour(softwareName, context) {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayBounds) {
+    return false;
+  }
+
+  let normalizedSteps = [];
+  try {
+    normalizedSteps = await planVisualGuidedTourWithGroq(softwareName, context);
+  } catch {
+    normalizedSteps = buildTourTemplates(softwareName);
+  }
+
+  const steps = normalizedSteps.map((step) => ({
+    x: Math.round(overlayBounds.width * step.x),
+    y: Math.round(overlayBounds.height * step.y),
+    text: step.text,
+    click: Boolean(step.click),
+  }));
+
+  overlayWindow.webContents.send("assistant:guided-tour", {
+    software: softwareName || "this software",
+    steps,
+  });
+
+  return true;
 }
 
 function getVirtualBounds() {
@@ -301,6 +458,7 @@ function getVirtualBounds() {
 
 function createOverlay() {
   const bounds = getVirtualBounds();
+  overlayBounds = bounds;
 
   overlayWindow = new BrowserWindow({
     x: bounds.x,
@@ -341,7 +499,7 @@ function createOverlay() {
   }, 8);
 }
 
-app.whenReady().then(() => {
+  app.whenReady().then(() => {
   createOverlay();
 
   ipcMain.handle("assistant:cursor-context", () => {
@@ -365,16 +523,40 @@ app.whenReady().then(() => {
       }
 
       let message = "";
+      let suppressFinalTts = false;
+      let shouldStartGuidedTour = false;
+      let softwareName = "";
 
       try {
         const plan = await planActionWithGroq(transcript, payload);
-        message = executePlannedAction(plan);
+        const actionResult = executePlannedAction(plan);
+        message = actionResult.message;
+        suppressFinalTts = Boolean(actionResult.suppressFinalTts);
+        shouldStartGuidedTour = Boolean(actionResult.shouldStartGuidedTour);
+        softwareName = String(actionResult.softwareName || "");
       } catch {
         message = executeVoiceCommandFallback(transcript);
+        if (normalizeTranscript(transcript).startsWith("explain")) {
+          shouldStartGuidedTour = true;
+          softwareName = normalizeTranscript(transcript).replace("explain", "").trim() || "this software";
+          suppressFinalTts = true;
+        }
       }
 
-      const speechResult = await speakWithCloudTts(message);
-      const finalMessage = speechResult.ok ? message : `${message} (TTS unavailable: ${speechResult.reason})`;
+      if (shouldStartGuidedTour) {
+        const started = await startSoftwareGuidedTour(softwareName, payload);
+        if (!started) {
+          suppressFinalTts = false;
+          message = `I can explain ${softwareName || "this software"}, but I could not start the on-screen guided tour right now.`;
+        }
+      }
+
+      const speechResult = suppressFinalTts ? { ok: false, reason: "Skipped in guided tour mode." } : await speakWithCloudTts(message);
+      const finalMessage = suppressFinalTts
+        ? message
+        : speechResult.ok
+          ? message
+          : `${message} (TTS unavailable: ${speechResult.reason})`;
 
       return {
         ok: true,
@@ -402,6 +584,22 @@ app.whenReady().then(() => {
               }
             : null,
       };
+    }
+  });
+
+  ipcMain.handle("assistant:speak-text", async (_event, text) => {
+    try {
+      const speechResult = await speakWithCloudTts(String(text || ""));
+      if (!speechResult.ok) {
+        return { ok: false, reason: speechResult.reason };
+      }
+      return {
+        ok: true,
+        audioBase64: speechResult.audioBase64,
+        mimeType: speechResult.mimeType,
+      };
+    } catch (error) {
+      return { ok: false, reason: error.message };
     }
   });
 
