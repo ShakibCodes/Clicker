@@ -4,6 +4,8 @@ const { desktopCapturer, ipcRenderer } = require("electron");
 const cursor = document.getElementById("secondary-cursor");
 const clickRing = document.getElementById("click-ring");
 const statusPanel = document.getElementById("assistant-status");
+const cursorWidth = 13;
+const cursorHeight = 15;
 
 let targetX = window.innerWidth / 2;
 let targetY = window.innerHeight / 2;
@@ -17,12 +19,16 @@ let isGuidedControlActive = false;
 
 const followOffsetX = 42;
 const followOffsetY = 28;
-const guidedOffsetX = -13;
-const guidedOffsetY = -8;
+const guidedOffsetX = -(cursorWidth / 2);
+const guidedOffsetY = -(cursorHeight / 2);
 let activeOffsetX = followOffsetX;
 let activeOffsetY = followOffsetY;
 const captureIntervalMs = 2500;
 const recordingMs = 4500;
+
+function renderCursor() {
+  cursor.style.transform = `translate3d(${currentX + activeOffsetX}px, ${currentY + activeOffsetY}px, 0)`;
+}
 
 ipcRenderer.on("cursor:position", (_event, payload) => {
   if (isGuidedControlActive) {
@@ -229,12 +235,12 @@ function sleep(ms) {
   });
 }
 
-async function waitUntilCursorNearTarget(maxWaitMs = 2200) {
+async function waitUntilCursorNearTarget(maxWaitMs = 2200, tolerancePx = 2) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     const dx = Math.abs(targetX - currentX);
     const dy = Math.abs(targetY - currentY);
-    if (dx < 14 && dy < 14) {
+    if (dx <= tolerancePx && dy <= tolerancePx) {
       return;
     }
     await sleep(16);
@@ -244,7 +250,12 @@ async function waitUntilCursorNearTarget(maxWaitMs = 2200) {
 async function moveCursorTo(x, y, maxWaitMs = 2200) {
   targetX = x;
   targetY = y;
-  await waitUntilCursorNearTarget(maxWaitMs);
+  await waitUntilCursorNearTarget(maxWaitMs, 2);
+
+  // Force an exact landing so guided pointing is pixel-precise.
+  currentX = x;
+  currentY = y;
+  renderCursor();
 }
 
 function showClickCue(x, y) {
@@ -350,7 +361,7 @@ function animate() {
   currentX += (targetX - currentX) * 0.13;
   currentY += (targetY - currentY) * 0.13;
 
-  cursor.style.transform = `translate3d(${currentX + activeOffsetX}px, ${currentY + activeOffsetY}px, 0)`;
+  renderCursor();
   window.requestAnimationFrame(animate);
 }
 
