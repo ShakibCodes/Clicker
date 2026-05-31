@@ -140,6 +140,187 @@ function normalizeTranscript(value) {
   return value.toLowerCase().trim();
 }
 
+const BROWSER_SITE_RULES = [
+  {
+    key: "youtube",
+    aliases: ["youtube", "yt"],
+    homeUrl: "https://www.youtube.com",
+    searchUrl: (query) => `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "google",
+    aliases: ["google"],
+    homeUrl: "https://www.google.com",
+    searchUrl: (query) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "github",
+    aliases: ["github"],
+    homeUrl: "https://github.com",
+    searchUrl: (query) => `https://github.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "amazon",
+    aliases: ["amazon"],
+    homeUrl: "https://www.amazon.in",
+    searchUrl: (query) => `https://www.amazon.in/s?k=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "flipkart",
+    aliases: ["flipkart"],
+    homeUrl: "https://www.flipkart.com",
+    searchUrl: (query) => `https://www.flipkart.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "wikipedia",
+    aliases: ["wikipedia", "wiki"],
+    homeUrl: "https://www.wikipedia.org",
+    searchUrl: (query) => `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "reddit",
+    aliases: ["reddit"],
+    homeUrl: "https://www.reddit.com",
+    searchUrl: (query) => `https://www.reddit.com/search/?q=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "linkedin",
+    aliases: ["linkedin"],
+    homeUrl: "https://www.linkedin.com",
+    searchUrl: (query) => `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(query)}`,
+  },
+  {
+    key: "x",
+    aliases: ["x", "twitter"],
+    homeUrl: "https://x.com",
+    searchUrl: (query) => `https://x.com/search?q=${encodeURIComponent(query)}`,
+  },
+];
+
+function extractBrowserTaskIntent(transcript) {
+  const normalized = normalizeTranscript(transcript)
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return null;
+  }
+
+  let matchedRule = null;
+  let matchedAlias = "";
+  for (const rule of BROWSER_SITE_RULES) {
+    const alias = rule.aliases.find((name) => new RegExp(`\\b${name}\\b`).test(normalized));
+    if (alias) {
+      matchedRule = rule;
+      matchedAlias = alias;
+      break;
+    }
+  }
+
+  if (!matchedRule) {
+    return null;
+  }
+
+  const hasTaskIntent =
+    normalized.includes("open") ||
+    normalized.includes("go to") ||
+    normalized.includes("launch") ||
+    normalized.includes("start") ||
+    normalized.includes("search") ||
+    normalized.includes("play") ||
+    normalized.includes("listen") ||
+    normalized.includes("watch") ||
+    normalized.includes("buy") ||
+    normalized.includes("order") ||
+    normalized.includes("find") ||
+    normalized.includes("show") ||
+    normalized.includes("look up") ||
+    normalized.includes("music") ||
+    normalized.includes("video") ||
+    normalized.includes("song");
+
+  if (!hasTaskIntent) {
+    return {
+      site: matchedRule.key,
+      query: "",
+      rule: matchedRule,
+    };
+  }
+
+  let candidate = normalized;
+  candidate = candidate.replace(new RegExp(`\\b(on|in)\\s+${matchedAlias}\\b`, "g"), " ");
+  candidate = candidate.replace(new RegExp(`\\b${matchedAlias}\\b`, "g"), " ");
+  candidate = candidate.replace(/\b(open|go to|launch|start)\b/g, " ");
+  candidate = candidate.replace(/\b(i want to|i wanna|i would like to|can you|please|for me)\b/g, " ");
+  candidate = candidate.replace(/\b(search( for)?|play|listen( to)?|watch|buy|order|find|show|look up)\b/g, " ");
+  candidate = candidate.replace(/\b(song|songs|music|videos?|about|for)\b/g, " ");
+  candidate = candidate.replace(/\s+/g, " ").trim();
+
+  const query = candidate.length >= 2 ? candidate : "";
+  return {
+    site: matchedRule.key,
+    query,
+    rule: matchedRule,
+  };
+}
+
+function openBrowserTask(intent) {
+  const query = String(intent?.query || "").trim();
+  const rule = intent?.rule;
+  if (!rule || !rule.homeUrl || typeof rule.searchUrl !== "function") {
+    return "I understood the browser task, but I could not map that site safely yet.";
+  }
+
+  const friendlySiteName = rule.key === "x" ? "X" : rule.key[0].toUpperCase() + rule.key.slice(1);
+  const speakingQuery = query.slice(0, 120);
+
+  if (rule.key === "youtube" && query) {
+    return openYouTubeTopResultOrSearch(query);
+  }
+
+  const url = query ? rule.searchUrl(query) : rule.homeUrl;
+  shell.openExternal(url);
+  return query
+    ? `Opening ${friendlySiteName} and searching for ${speakingQuery}.`
+    : `Opening ${friendlySiteName}.`;
+}
+
+async function openYouTubeTopResultOrSearch(query) {
+  const cleanQuery = String(query || "").trim();
+  if (!cleanQuery) {
+    shell.openExternal("https://www.youtube.com");
+    return "Opening YouTube.";
+  }
+
+  try {
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`;
+    const response = await fetch(searchUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`YouTube search request failed (${response.status}).`);
+    }
+
+    const html = await response.text();
+    const match = html.match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/);
+    if (!match || !match[1]) {
+      shell.openExternal(searchUrl);
+      return `Opening YouTube and searching for ${cleanQuery}.`;
+    }
+
+    const videoId = match[1];
+    shell.openExternal(`https://www.youtube.com/watch?v=${videoId}&autoplay=1`);
+    return `Opening YouTube and playing ${cleanQuery}.`;
+  } catch {
+    shell.openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(cleanQuery)}`);
+    return `Opening YouTube and searching for ${cleanQuery}.`;
+  }
+}
+
 async function transcribeWithGroq(audioBase64, mimeType) {
   const apiKey = getGroqSpeechApiKey();
 
@@ -402,9 +583,14 @@ async function planVisualElementLocationWithGroq(targetName, context) {
   };
 }
 
-function executePlannedAction(plan) {
+async function executePlannedAction(plan) {
   const action = (plan?.action || "none").toString();
   const argument = (plan?.argument || "").toString().trim();
+
+  const plannedBrowserTask = extractBrowserTaskIntent(`${action} ${argument}`);
+  if (plannedBrowserTask) {
+    return { message: await openBrowserTask(plannedBrowserTask) };
+  }
 
   if (action === "open_notepad") {
     runCommand("start notepad");
@@ -422,14 +608,29 @@ function executePlannedAction(plan) {
   }
 
   if (action === "search_web" && argument) {
+    const browserTask = extractBrowserTaskIntent(argument);
+    if (browserTask) {
+      return { message: await openBrowserTask(browserTask) };
+    }
     shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(argument)}`);
     return { message: `Searching for ${argument}.` };
   }
 
   if (action === "open_website" && argument) {
+    const browserTask = extractBrowserTaskIntent(argument);
+    if (browserTask) {
+      return { message: await openBrowserTask(browserTask) };
+    }
     const fullUrl = argument.startsWith("http") ? argument : `https://${argument}`;
     shell.openExternal(fullUrl);
-    return { message: `Opening ${fullUrl}.` };
+    const spokenSite = fullUrl
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split("/")[0]
+      .split(".")
+      .slice(0, 2)
+      .join(" ");
+    return { message: `Opening ${spokenSite}.` };
   }
 
   if (action === "explain_software") {
@@ -453,8 +654,13 @@ function executePlannedAction(plan) {
   return { message: plan?.reply || "I understood you, but no safe action was executed." };
 }
 
-function executeVoiceCommandFallback(transcript) {
+async function executeVoiceCommandFallback(transcript) {
   const normalized = normalizeTranscript(transcript);
+
+  const browserTask = extractBrowserTaskIntent(normalized);
+  if (browserTask) {
+    return openBrowserTask(browserTask);
+  }
 
   if (normalized.includes("open notepad")) {
     runCommand("start notepad");
@@ -473,6 +679,10 @@ function executeVoiceCommandFallback(transcript) {
 
   if (normalized.startsWith("search for ")) {
     const query = normalized.replace("search for ", "").trim();
+    const nestedBrowserTask = extractBrowserTaskIntent(query);
+    if (nestedBrowserTask) {
+      return openBrowserTask(nestedBrowserTask);
+    }
     shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
     return `Searching for ${query}.`;
   }
@@ -700,7 +910,7 @@ function createOverlay() {
 
       try {
         const plan = await planActionWithGroq(transcript, payload);
-        const actionResult = executePlannedAction(plan);
+        const actionResult = await executePlannedAction(plan);
         message = actionResult.message;
         suppressFinalTts = Boolean(actionResult.suppressFinalTts);
         shouldStartGuidedTour = Boolean(actionResult.shouldStartGuidedTour);
@@ -708,7 +918,7 @@ function createOverlay() {
         shouldLocateElement = Boolean(actionResult.shouldLocateElement);
         elementName = String(actionResult.elementName || "");
       } catch {
-        message = executeVoiceCommandFallback(transcript);
+        message = await executeVoiceCommandFallback(transcript);
         if (normalizeTranscript(transcript).startsWith("explain")) {
           shouldStartGuidedTour = true;
           softwareName = normalizeTranscript(transcript).replace("explain", "").trim() || "this software";
