@@ -182,7 +182,7 @@ async function planActionWithGroq(transcript, context) {
   }
 
   const systemPrompt =
-    "You are an assistant that returns strict JSON only. Choose one action from: open_notepad, open_calculator, open_vscode, search_web, open_website, explain_software, none. Return keys: action, argument, reply.";
+    "You are an assistant that returns strict JSON only. Choose one action from: open_notepad, open_calculator, open_vscode, search_web, open_website, locate_ui_element, explain_software, none. Return keys: action, argument, reply. Use current on-screen context first. If user asks to find/locate/show a button, tab, panel, menu, icon, or control, choose locate_ui_element and put only that target name in argument. Choose explain_software only when user explicitly asks for tutorial/guide/walkthrough/explain entire software.";
 
   const userPrompt = JSON.stringify({
     transcript,
@@ -291,6 +291,69 @@ async function planVisualGuidedTourWithGroq(softwareName, context) {
   return steps;
 }
 
+async function planVisualElementLocationWithGroq(targetName, context) {
+  const apiKey = getGroqTextApiKey();
+  const screenFrame = String(context?.screenFrame || "");
+  if (!apiKey) {
+    throw new Error("Missing GROQ_AI_API_FOR_TEXT in .env.local or environment.");
+  }
+  if (!screenFrame.startsWith("data:image")) {
+    throw new Error("No recent screen frame is available for element location.");
+  }
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return strict JSON only with shape: {x:number,y:number,text:string,click:boolean,confidence:number}. x and y are normalized between 0 and 1 and must pinpoint the exact clickable center of the requested UI target visible in the screenshot. If not visible, set confidence to 0 and text to a short reason.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Find this UI target in the current visible window and pinpoint it exactly: ${targetName}`,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: screenFrame,
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Groq element locator failed (${response.status}): ${body}`);
+  }
+
+  const data = await response.json();
+  const raw = data.choices?.[0]?.message?.content || "{}";
+  const parsed = JSON.parse(raw);
+
+  return {
+    x: Number(parsed?.x),
+    y: Number(parsed?.y),
+    text: String(parsed?.text || "").trim(),
+    click: Boolean(parsed?.click),
+    confidence: Number(parsed?.confidence),
+  };
+}
+
 function executePlannedAction(plan) {
   const action = (plan?.action || "none").toString();
   const argument = (plan?.argument || "").toString().trim();
@@ -327,6 +390,15 @@ function executePlannedAction(plan) {
       suppressFinalTts: true,
       shouldStartGuidedTour: true,
       softwareName: argument || "this software",
+    };
+  }
+
+  if (action === "locate_ui_element") {
+    return {
+      message: `Locating ${argument || "that control"} in the current window.`,
+      suppressFinalTts: true,
+      shouldLocateElement: true,
+      elementName: argument || "requested control",
     };
   }
 
@@ -440,6 +512,55 @@ async function startSoftwareGuidedTour(softwareName, context) {
   return true;
 }
 
+async function startElementLocationTour(elementName, context) {
+  if (!overlayWindow || overlayWindow.isDestroyed() || !overlayBounds) {
+    return false;
+  }
+
+  const located = await planVisualElementLocationWithGroq(elementName, context).catch(() => null);
+  const hasValidModelPoint =
+    Boolean(located) &&
+    Number.isFinite(located.x) &&
+    Number.isFinite(located.y) &&
+    located.x >= 0 &&
+    located.x <= 1 &&
+    located.y >= 0 &&
+    located.y <= 1;
+
+  if (hasValidModelPoint) {
+    overlayWindow.webContents.send("assistant:guided-tour", {
+      software: "current window",
+      steps: [
+        {
+          x: Math.round(overlayBounds.width * located.x),
+          y: Math.round(overlayBounds.height * located.y),
+          text: located.text || `This is the ${elementName}.`,
+          click: true,
+        },
+      ],
+    });
+    return true;
+  }
+
+  const target = normalizeSoftwareName(elementName);
+  if (target.includes("run")) {
+    overlayWindow.webContents.send("assistant:guided-tour", {
+      software: "VS Code",
+      steps: [
+        {
+          x: Math.round(overlayBounds.width * 0.03),
+          y: Math.round(overlayBounds.height * 0.46),
+          text: "Run and Debug icon in the left Activity Bar.",
+          click: true,
+        },
+      ],
+    });
+    return true;
+  }
+
+  return false;
+}
+
 function getVirtualBounds() {
   const displays = screen.getAllDisplays();
 
@@ -526,6 +647,8 @@ function createOverlay() {
       let suppressFinalTts = false;
       let shouldStartGuidedTour = false;
       let softwareName = "";
+      let shouldLocateElement = false;
+      let elementName = "";
 
       try {
         const plan = await planActionWithGroq(transcript, payload);
@@ -534,12 +657,24 @@ function createOverlay() {
         suppressFinalTts = Boolean(actionResult.suppressFinalTts);
         shouldStartGuidedTour = Boolean(actionResult.shouldStartGuidedTour);
         softwareName = String(actionResult.softwareName || "");
+        shouldLocateElement = Boolean(actionResult.shouldLocateElement);
+        elementName = String(actionResult.elementName || "");
       } catch {
         message = executeVoiceCommandFallback(transcript);
         if (normalizeTranscript(transcript).startsWith("explain")) {
           shouldStartGuidedTour = true;
           softwareName = normalizeTranscript(transcript).replace("explain", "").trim() || "this software";
           suppressFinalTts = true;
+        }
+      }
+
+      if (shouldLocateElement) {
+        const located = await startElementLocationTour(elementName, payload);
+        if (!located) {
+          suppressFinalTts = false;
+          message = `I could not confidently find "${elementName}" in the current window. Please keep it visible and try again.`;
+        } else {
+          message = `Pointed to "${elementName}" in the current window.`;
         }
       }
 

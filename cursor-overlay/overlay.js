@@ -15,8 +15,12 @@ let currentAssistantAudio = null;
 let isGuidedTourRunning = false;
 let isGuidedControlActive = false;
 
-const sideOffsetX = 42;
-const sideOffsetY = 28;
+const followOffsetX = 42;
+const followOffsetY = 28;
+const guidedOffsetX = -13;
+const guidedOffsetY = -8;
+let activeOffsetX = followOffsetX;
+let activeOffsetY = followOffsetY;
 const captureIntervalMs = 2500;
 const recordingMs = 4500;
 
@@ -243,8 +247,8 @@ async function moveCursorTo(x, y, maxWaitMs = 2200) {
 function showClickCue(x, y) {
   cursor.classList.add("clicking");
   clickRing.classList.remove("active");
-  clickRing.style.setProperty("--x", `${x + sideOffsetX - 9}px`);
-  clickRing.style.setProperty("--y", `${y + sideOffsetY - 9}px`);
+  clickRing.style.setProperty("--x", `${x - 9}px`);
+  clickRing.style.setProperty("--y", `${y - 9}px`);
   void clickRing.offsetWidth;
   clickRing.classList.add("active");
   setTimeout(() => {
@@ -277,6 +281,8 @@ ipcRenderer.on("assistant:guided-tour", async (_event, payload) => {
 
   isGuidedTourRunning = true;
   isGuidedControlActive = true;
+  activeOffsetX = guidedOffsetX;
+  activeOffsetY = guidedOffsetY;
   const returnX = currentX;
   const returnY = currentY;
 
@@ -313,6 +319,8 @@ ipcRenderer.on("assistant:guided-tour", async (_event, payload) => {
   } finally {
     isGuidedTourRunning = false;
     isGuidedControlActive = false;
+    activeOffsetX = followOffsetX;
+    activeOffsetY = followOffsetY;
   }
 });
 
@@ -324,7 +332,7 @@ function animate() {
   currentX += (targetX - currentX) * 0.13;
   currentY += (targetY - currentY) * 0.13;
 
-  cursor.style.transform = `translate3d(${currentX + sideOffsetX}px, ${currentY + sideOffsetY}px, 0)`;
+  cursor.style.transform = `translate3d(${currentX + activeOffsetX}px, ${currentY + activeOffsetY}px, 0)`;
   window.requestAnimationFrame(animate);
 }
 
