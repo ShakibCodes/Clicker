@@ -33,6 +33,9 @@ ipcRenderer.on("cursor:position", (_event, payload) => {
 });
 
 function setStatus(text) {
+  if (!statusPanel) {
+    return;
+  }
   statusPanel.innerHTML = `<strong>AI Buddy</strong><br />${text}`;
 }
 
@@ -268,6 +271,22 @@ async function speakStep(stepText) {
   }
 }
 
+function buildNaturalStepSpeech(step, index, totalSteps) {
+  const note = step?.text || "Review this area.";
+  const intros = [
+    "Take a look here.",
+    "Now look at this.",
+    "Next, focus here.",
+    "Great, now this area.",
+  ];
+  const intro = intros[index % intros.length];
+  const clickHint = step?.click ? "This is the one to click." : "Just note this spot.";
+  if (totalSteps <= 1) {
+    return `${intro} ${note} ${clickHint}`;
+  }
+  return `${intro} ${note} ${clickHint}`;
+}
+
 ipcRenderer.on("assistant:guided-tour", async (_event, payload) => {
   if (isGuidedTourRunning) {
     return;
@@ -297,15 +316,14 @@ ipcRenderer.on("assistant:guided-tour", async (_event, payload) => {
 
       await moveCursorTo(step.x, step.y);
 
-      const stepLabel = `Step ${i + 1}/${steps.length}`;
       const needsClick = Boolean(step.click);
       const actionLabel = needsClick ? "Click here" : "Look here";
-      setStatus(`${stepLabel} - ${actionLabel}<br />${step.text || "Review this area."}`);
+      setStatus(`${actionLabel}<br />${step.text || "Review this area."}`);
       await sleep(900);
       if (needsClick) {
         showClickCue(step.x, step.y);
       }
-      await speakStep(`${stepLabel}. ${actionLabel}. ${step.text || "Review this area."}`);
+      await speakStep(buildNaturalStepSpeech(step, i, steps.length));
       await sleep(180);
     }
 

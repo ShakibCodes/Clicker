@@ -395,7 +395,7 @@ function executePlannedAction(plan) {
 
   if (action === "locate_ui_element") {
     return {
-      message: `Locating ${argument || "that control"} in the current window.`,
+      message: `Sure, I will point out ${argument || "that control"} in your current window.`,
       suppressFinalTts: true,
       shouldLocateElement: true,
       elementName: argument || "requested control",
@@ -672,9 +672,9 @@ function createOverlay() {
         const located = await startElementLocationTour(elementName, payload);
         if (!located) {
           suppressFinalTts = false;
-          message = `I could not confidently find "${elementName}" in the current window. Please keep it visible and try again.`;
+          message = `I could not spot "${elementName}" clearly in this view. Keep it visible and ask me again, and I will point right to it.`;
         } else {
-          message = `Pointed to "${elementName}" in the current window.`;
+          message = `There it is. I just pointed to "${elementName}" in your current window.`;
         }
       }
 
