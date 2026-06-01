@@ -4,6 +4,7 @@ const { desktopCapturer, ipcRenderer } = require("electron");
 const cursor = document.getElementById("secondary-cursor");
 const voiceBars = Array.from(document.querySelectorAll(".voice-bar"));
 const clickRing = document.getElementById("click-ring");
+const tooltip = document.getElementById("cursor-tooltip");
 const statusPanel = document.getElementById("assistant-status");
 const cursorWidth = 13;
 const cursorHeight = 15;
@@ -18,6 +19,7 @@ let isExecuting = false;
 let currentAssistantAudio = null;
 let isGuidedTourRunning = false;
 let isGuidedControlActive = false;
+let tooltipText = "";
 
 const followOffsetX = 42;
 const followOffsetY = 28;
@@ -30,7 +32,61 @@ const recordingMs = 4500;
 let visualizerRafId = null;
 
 function renderCursor() {
-  cursor.style.transform = `translate3d(${currentX + activeOffsetX}px, ${currentY + activeOffsetY}px, 0)`;
+  const drawX = currentX + activeOffsetX;
+  const drawY = currentY + activeOffsetY;
+  cursor.style.transform = `translate3d(${drawX}px, ${drawY}px, 0)`;
+  renderTooltip(drawX, drawY);
+}
+
+function renderTooltip(cursorX, cursorY) {
+  if (!tooltip || !tooltipText) {
+    return;
+  }
+
+  const tooltipWidth = tooltip.offsetWidth || 0;
+  const tooltipHeight = tooltip.offsetHeight || 0;
+  // Anchor to right-bottom of secondary cursor.
+  const left = Math.round(cursorX + cursorWidth + 6);
+  const top = Math.round(cursorY + cursorHeight + 6);
+  const safeLeft = Math.max(6, Math.min(window.innerWidth - tooltipWidth - 6, left));
+  const safeTop = Math.max(6, Math.min(window.innerHeight - tooltipHeight - 6, top));
+  tooltip.style.left = `${safeLeft}px`;
+  tooltip.style.top = `${safeTop}px`;
+}
+
+function showTooltip(text) {
+  if (!tooltip) {
+    return;
+  }
+  tooltipText = String(text || "").trim();
+  if (!tooltipText) {
+    hideTooltip();
+    return;
+  }
+  tooltip.textContent = tooltipText;
+  tooltip.classList.add("visible");
+  renderTooltip(currentX + activeOffsetX, currentY + activeOffsetY);
+}
+
+function hideTooltip() {
+  if (!tooltip) {
+    return;
+  }
+  tooltipText = "";
+  tooltip.textContent = "";
+  tooltip.classList.remove("visible");
+}
+
+function buildStepTooltip(step, index, totalSteps) {
+  const focusPrompts = ["Look here", "Here!", "See this", "This part"];
+  const clickPrompts = ["Click here", "This one!", "Tap here", "Click this"];
+  const prompts = step?.click ? clickPrompts : focusPrompts;
+  const prompt = prompts[index % prompts.length];
+
+  if (totalSteps <= 1) {
+    return step?.click ? "This one!" : "Found it";
+  }
+  return prompt;
 }
 
 ipcRenderer.on("cursor:position", (_event, payload) => {
@@ -421,6 +477,7 @@ ipcRenderer.on("assistant:guided-tour", async (_event, payload) => {
       const needsClick = Boolean(step.click);
       const actionLabel = needsClick ? "Click here" : "Look here";
       setStatus(`${actionLabel}<br />${step.text || "Review this area."}`);
+      showTooltip(buildStepTooltip(step, i, steps.length));
       await sleep(900);
       if (needsClick) {
         showClickCue(step.x, step.y);
@@ -437,6 +494,7 @@ ipcRenderer.on("assistant:guided-tour", async (_event, payload) => {
     setStatus(`Guided tour issue: ${error.message}`);
     await moveCursorTo(returnX, returnY, 2400).catch(() => {});
   } finally {
+    hideTooltip();
     isGuidedTourRunning = false;
     isGuidedControlActive = false;
     activeOffsetX = followOffsetX;

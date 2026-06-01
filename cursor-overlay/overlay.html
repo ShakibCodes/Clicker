@@ -121,6 +121,34 @@
         animation: click-ping 0.58s ease-out forwards;
       }
 
+      #cursor-tooltip {
+        position: fixed;
+        top: 0;
+        left: 0;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background: rgba(40, 112, 245, 0.96);
+        border: 1px solid rgba(170, 210, 255, 0.7);
+        color: #f5f9ff;
+        font:
+          600 11px/1.1 "Segoe UI",
+          system-ui,
+          sans-serif;
+        letter-spacing: 0;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transform: translate3d(0, 0, 0);
+        box-shadow: 0 2px 8px rgba(8, 18, 38, 0.4);
+        text-shadow: none;
+        transition: none;
+      }
+
+      #cursor-tooltip.visible {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+      }
+
       @keyframes click-ping {
         0% {
           opacity: 0.9;
@@ -146,6 +174,7 @@
       <div class="loading-spinner" aria-hidden="true"></div>
     </div>
     <div id="click-ring" aria-hidden="true"></div>
+    <div id="cursor-tooltip" aria-hidden="true"></div>
     <script src="./overlay.js"></script>
   </body>
 </html>
