@@ -16,6 +16,7 @@ const {
   transcribeWithGroq,
 } = require("./lib/cloud-ai");
 const { createGuidedTourController } = require("./lib/guided-tour");
+const { buildReply } = require("./lib/reply-builder");
 const { normalizeTranscript } = require("./lib/text-utils");
 
 let overlayWindow = null;
@@ -157,9 +158,9 @@ async function handleVoiceCommand(payload) {
     const located = await guidedTour.startElementLocationTour(elementName, payload);
     if (!located) {
       suppressFinalTts = false;
-      message = `I could not spot "${elementName}" clearly in this view. Keep it visible and ask me again, and I will point right to it.`;
+      message = buildReply("notFound", { target: elementName });
     } else {
-      message = `There it is. I just pointed to "${elementName}" in your current window.`;
+      message = buildReply("located", { target: elementName });
     }
   }
 
@@ -167,7 +168,7 @@ async function handleVoiceCommand(payload) {
     const started = await guidedTour.startSoftwareGuidedTour(softwareName, payload);
     if (!started) {
       suppressFinalTts = false;
-      message = `I can explain ${softwareName || "this software"}, but I could not start the on-screen guided tour right now.`;
+      message = `I can explain ${softwareName || "this software"}, but I could not start the walkthrough right now.`;
     }
   }
 

@@ -71,8 +71,17 @@ function getElevenLabsVoiceId() {
   );
 }
 
+function getElevenLabsModelId() {
+  return (
+    process.env.ELEVENLABS_MODEL_ID ||
+    readEnvValue("ELEVENLABS_MODEL_ID") ||
+    "eleven_multilingual_v2"
+  );
+}
+
 module.exports = {
   getElevenLabsApiKey,
+  getElevenLabsModelId,
   getElevenLabsVoiceId,
   getGroqSpeechApiKey,
   getGroqTextApiKey,

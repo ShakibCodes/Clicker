@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const {
   getElevenLabsApiKey,
+  getElevenLabsModelId,
   getElevenLabsVoiceId,
   getGroqSpeechApiKey,
   getGroqTextApiKey,
@@ -26,6 +27,7 @@ async function speakWithCloudTts(text) {
   }
 
   const voiceId = getElevenLabsVoiceId();
+  const modelId = getElevenLabsModelId();
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
     method: "POST",
     headers: {
@@ -35,11 +37,11 @@ async function speakWithCloudTts(text) {
     },
     body: JSON.stringify({
       text: spokenText,
-      model_id: "eleven_turbo_v2_5",
+      model_id: modelId,
       voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.8,
-        style: 0.15,
+        stability: 0.34,
+        similarity_boost: 0.76,
+        style: 0.48,
         use_speaker_boost: true,
       },
     }),

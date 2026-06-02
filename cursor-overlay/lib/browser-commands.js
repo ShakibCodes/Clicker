@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { escapeRegExp, normalizeTranscript } = require("./text-utils");
+const { buildReply } = require("./reply-builder");
 
 const BROWSER_SITE_RULES = [
   {
@@ -216,7 +217,7 @@ function createBrowserCommandRunner(shell) {
     const cleanQuery = String(query || "").trim();
     if (!cleanQuery) {
       shell.openExternal("https://www.youtube.com");
-      return "Opening YouTube.";
+      return buildReply("open", { target: "YouTube" });
     }
 
     try {
@@ -264,12 +265,14 @@ function createBrowserCommandRunner(shell) {
 
     const url = query && typeof rule.searchUrl === "function" ? rule.searchUrl(query) : rule.homeUrl;
     shell.openExternal(url);
-    return query && typeof rule.searchUrl === "function" ? `Searching ${friendlySiteName} for ${speakingQuery}.` : `Opening ${friendlySiteName}.`;
+    return query && typeof rule.searchUrl === "function"
+      ? buildReply("search", { site: friendlySiteName, query: speakingQuery })
+      : buildReply("open", { target: friendlySiteName });
   }
 
   function openGenericWebsite(intent) {
     shell.openExternal(intent.url);
-    return `Opening ${intent.displayName}.`;
+    return buildReply("open", { target: intent.displayName });
   }
 
   return {
@@ -312,28 +315,28 @@ function buildYouTubeReply(query, options = {}) {
   const kind = classifyYouTubeQuery(query);
 
   if (kind === "educational") {
-    return didAutoplay ? `Playing ${topic}.` : `Opening YouTube results for ${topic}.`;
+    return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
   }
   if (kind === "informational") {
-    return didAutoplay ? `Playing ${topic}.` : `Opening results for ${topic}.`;
+    return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
   }
   if (kind === "rock") {
-    return didAutoplay ? `Rock on, playing ${topic}.` : `Rock mode on, finding ${topic}.`;
+    return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
   }
   if (kind === "pop") {
-    return didAutoplay ? `Pop vibes, playing ${topic}.` : `Pop vibes, finding ${topic}.`;
+    return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
   }
   if (kind === "hiphop") {
-    return didAutoplay ? `Beat drop, playing ${topic}.` : `Beat drop, finding ${topic}.`;
+    return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
   }
   if (kind === "chill") {
-    return didAutoplay ? `Smooth pick, playing ${topic}.` : `Smooth pick, finding ${topic}.`;
+    return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
   }
   if (kind === "music") {
-    return didAutoplay ? `Nice choice, playing ${topic}.` : `Nice choice, finding ${topic}.`;
+    return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
   }
 
-  return didAutoplay ? `Playing ${topic}.` : `Opening YouTube results for ${topic}.`;
+  return didAutoplay ? buildReply("play", { topic }) : buildReply("find", { topic });
 }
 
 module.exports = {

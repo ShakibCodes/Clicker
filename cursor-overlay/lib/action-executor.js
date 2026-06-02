@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { normalizeTranscript } = require("./text-utils");
+const { buildReply } = require("./reply-builder");
 
 function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extractGenericOpenWebsiteIntent, runCommand, shell }) {
   const { openBrowserTask, openGenericWebsite } = browserCommands;
@@ -20,17 +21,17 @@ function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extra
 
     if (action === "open_notepad") {
       runCommand("start notepad");
-      return { message: "Opening Notepad." };
+      return { message: buildReply("open", { target: "Notepad" }) };
     }
 
     if (action === "open_calculator") {
       runCommand("start calc");
-      return { message: "Opening Calculator." };
+      return { message: buildReply("open", { target: "Calculator" }) };
     }
 
     if (action === "open_vscode") {
       runCommand("start code");
-      return { message: "Opening VS Code." };
+      return { message: buildReply("open", { target: "VS Code" }) };
     }
 
     if (action === "search_web" && argument) {
@@ -39,7 +40,7 @@ function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extra
         return { message: await openBrowserTask(browserTask) };
       }
       shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(argument)}`);
-      return { message: `Searching for ${argument}.` };
+      return { message: buildReply("search", { site: "Google", query: argument }) };
     }
 
     if (action === "open_website" && argument) {
@@ -60,12 +61,12 @@ function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extra
         .split(".")
         .slice(0, 2)
         .join(" ");
-      return { message: `Opening ${spokenSite}.` };
+      return { message: buildReply("open", { target: spokenSite }) };
     }
 
     if (action === "explain_software") {
       return {
-        message: `Starting a guided walkthrough of ${argument || "this software"}. Watch the secondary cursor as it points through the interface.`,
+        message: buildReply("guide", { target: argument || "this software" }),
         suppressFinalTts: true,
         shouldStartGuidedTour: true,
         softwareName: argument || "this software",
@@ -74,14 +75,14 @@ function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extra
 
     if (action === "locate_ui_element") {
       return {
-        message: `Sure, I will point out ${argument || "that control"} in your current window.`,
+        message: buildReply("locate", { target: argument || "that control" }),
         suppressFinalTts: true,
         shouldLocateElement: true,
         elementName: argument || "requested control",
       };
     }
 
-    return { message: plan?.reply || "I understood you, but no safe action was executed." };
+    return { message: plan?.reply || buildReply("unsupported") };
   }
 
   async function executeVoiceCommandFallback(transcript) {
@@ -99,17 +100,17 @@ function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extra
 
     if (normalized.includes("open notepad")) {
       runCommand("start notepad");
-      return "Opening Notepad.";
+      return buildReply("open", { target: "Notepad" });
     }
 
     if (normalized.includes("open calculator")) {
       runCommand("start calc");
-      return "Opening Calculator.";
+      return buildReply("open", { target: "Calculator" });
     }
 
     if (normalized.includes("open vscode") || normalized.includes("open vs code")) {
       runCommand("start code");
-      return "Opening VS Code.";
+      return buildReply("open", { target: "VS Code" });
     }
 
     if (normalized.startsWith("search for ")) {
@@ -119,7 +120,7 @@ function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extra
         return openBrowserTask(nestedBrowserTask);
       }
       shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
-      return `Searching for ${query}.`;
+      return buildReply("search", { site: "Google", query });
     }
 
     if (normalized.startsWith("open website ")) {
@@ -136,15 +137,15 @@ function createActionExecutor({ browserCommands, extractBrowserTaskIntent, extra
         .split("/")[0]
         .split(".")[0]
         .replace(/[-_]+/g, " ");
-      return `Opening ${spokenSite}.`;
+      return buildReply("open", { target: spokenSite });
     }
 
     if (normalized.startsWith("explain ")) {
       const softwareName = normalized.replace("explain ", "").replace("software", "").trim();
-      return `Starting a guided walkthrough of ${softwareName || "this app"}.`;
+      return buildReply("guide", { target: softwareName || "this app" });
     }
 
-    return "I heard you, but that command is not in the current safe command set yet.";
+    return buildReply("unsupported");
   }
 
   return {
