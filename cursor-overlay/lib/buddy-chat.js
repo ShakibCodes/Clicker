@@ -10,6 +10,9 @@ const CASUAL_PATTERNS = [
   /\b(are you there|can you hear me|you there)\b/,
   /\b(i am bored|i'm bored|im bored)\b/,
   /\b(nice|cool|awesome|great|okay|ok)\b/,
+  /\b(say|tell|greet|wish|shout out)\b.+\b(to|for)\b/,
+  /\b(can you|could you|please)\b.+\b(say|tell|greet|wish|shout out)\b/,
+  /\b(i am|i'm|im)\b.+\b(on|in|live|streaming|recording)\b/,
 ];
 
 function extractBuddyChatIntent(transcript) {
@@ -27,7 +30,7 @@ function extractBuddyChatIntent(transcript) {
   }
 
   if (CASUAL_PATTERNS.some((pattern) => pattern.test(normalized))) {
-    return { message: normalized };
+    return { message: String(transcript || "").trim() };
   }
 
   return null;
@@ -35,6 +38,10 @@ function extractBuddyChatIntent(transcript) {
 
 async function answerBuddyChat(intent) {
   const fallback = answerBuddyChatFallback(intent?.message || "");
+  if (isDirectSpeechRequest(intent?.message || "")) {
+    return fallback;
+  }
+
   const apiKey = getGroqTextApiKey();
   if (!apiKey) {
     return fallback;
@@ -81,6 +88,11 @@ async function answerBuddyChat(intent) {
 function answerBuddyChatFallback(message) {
   const normalized = normalizeTranscript(message);
 
+  const directSpeech = buildDirectSpeechReply(message);
+  if (directSpeech) {
+    return directSpeech;
+  }
+
   if (/\b(how are you|how r you)\b/.test(normalized)) {
     return "I'm doing good, honestly. Ready whenever you are.";
   }
@@ -110,6 +122,59 @@ function answerBuddyChatFallback(message) {
   }
 
   return "I'm here with you. Tell me what's on your mind.";
+}
+
+function isDirectSpeechRequest(message) {
+  const normalized = normalizeTranscript(message);
+  return /\b(say|tell|greet|wish|shout out)\b/.test(normalized) && /\b(to|for)\b/.test(normalized);
+}
+
+function buildDirectSpeechReply(message) {
+  const normalized = normalizeTranscript(message);
+  const quoted = String(message || "").match(/['"]([^'"]{1,120})['"]/);
+  const target = extractSpeechTarget(normalized);
+
+  if (/\b(say|greet|shout out)\b/.test(normalized) && /\b(subscribers|chat|audience|viewers|followers|everyone)\b/.test(normalized)) {
+    return quoted?.[1] ? `${sentenceCase(quoted[1])}, everyone.` : "Hi everyone. Hope you're all doing great.";
+  }
+
+  if (quoted?.[1] && target) {
+    return `${sentenceCase(quoted[1])}, ${formatSpeechTarget(target)}.`;
+  }
+
+  if (/\b(say|greet|shout out)\b/.test(normalized) && target) {
+    return `Hey ${formatSpeechTarget(target)}. Hope you're doing great.`;
+  }
+
+  return "";
+}
+
+function extractSpeechTarget(normalized) {
+  const targetMatch = normalized.match(/\b(?:to|for)\s+(my\s+)?([a-z0-9\s]{1,40})$/);
+  if (!targetMatch?.[2]) {
+    return "";
+  }
+
+  return targetMatch[2]
+    .replace(/\b(please|now|buddy)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sentenceCase(value) {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  if (!clean) {
+    return "";
+  }
+  return clean[0].toUpperCase() + clean.slice(1);
+}
+
+function formatSpeechTarget(target) {
+  const clean = String(target || "").replace(/\s+/g, " ").trim();
+  if (clean.toLowerCase() === "x") {
+    return "X";
+  }
+  return clean;
 }
 
 module.exports = {

@@ -129,6 +129,11 @@ async function resolveVoiceAction(transcript, payload) {
     return { message: browserCommands.openGenericWebsite(directGenericWebsite) };
   }
 
+  const buddyChatIntent = extractBuddyChatIntent(transcript);
+  if (buddyChatIntent) {
+    return { message: await answerBuddyChat(buddyChatIntent) };
+  }
+
   const webKnowledgeIntent = extractWebKnowledgeIntent(transcript);
   if (webKnowledgeIntent) {
     await speakInterimMessage(buildReply("webSearchStart"));
@@ -136,11 +141,6 @@ async function resolveVoiceAction(transcript, payload) {
       text: "Checking the web...",
     });
     return { message: await answerWebKnowledgeQuestion(webKnowledgeIntent) };
-  }
-
-  const buddyChatIntent = extractBuddyChatIntent(transcript);
-  if (buddyChatIntent) {
-    return { message: await answerBuddyChat(buddyChatIntent) };
   }
 
   const plan = await planActionWithGroq(transcript, payload);

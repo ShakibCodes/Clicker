@@ -148,23 +148,7 @@ function extractBrowserTaskIntent(transcript) {
     return null;
   }
 
-  const hasTaskIntent =
-    normalized.includes("open") ||
-    normalized.includes("go to") ||
-    normalized.includes("launch") ||
-    normalized.includes("start") ||
-    normalized.includes("search") ||
-    normalized.includes("play") ||
-    normalized.includes("listen") ||
-    normalized.includes("watch") ||
-    normalized.includes("buy") ||
-    normalized.includes("order") ||
-    normalized.includes("find") ||
-    normalized.includes("show") ||
-    normalized.includes("look up") ||
-    normalized.includes("music") ||
-    normalized.includes("video") ||
-    normalized.includes("song");
+  const hasTaskIntent = hasBrowserTaskIntent(normalized, matchedAlias);
 
   if (!hasTaskIntent) {
     return null;
@@ -235,11 +219,39 @@ function extractMultipleBrowserTaskIntents(transcript) {
 
 function hasOpenIntent(normalized) {
   return (
-    normalized.includes("open") ||
-    normalized.includes("go to") ||
-    normalized.includes("launch") ||
-    normalized.includes("start")
+    /\b(open|launch|start)\b/.test(normalized) ||
+    /\bgo to\b/.test(normalized)
   );
+}
+
+function hasBrowserTaskIntent(normalized, matchedAlias) {
+  const alias = escapeRegExp(matchedAlias);
+
+  if (new RegExp(`\\b(open|launch|start)\\b.{0,24}\\b${alias}\\b`).test(normalized)) {
+    return true;
+  }
+
+  if (new RegExp(`\\bgo to\\b.{0,24}\\b${alias}\\b`).test(normalized)) {
+    return true;
+  }
+
+  if (new RegExp(`\\b(search|look up|find|show)\\b.{0,80}\\b(on|in|with|using)\\s+${alias}\\b`).test(normalized)) {
+    return true;
+  }
+
+  if (new RegExp(`\\b(search|look up|find|show)\\b\\s+${alias}\\b`).test(normalized)) {
+    return true;
+  }
+
+  if (new RegExp(`\\b(play|watch|listen to|buy|order)\\b.{0,80}\\b(on|in|from)\\s+${alias}\\b`).test(normalized)) {
+    return true;
+  }
+
+  if (new RegExp(`\\b${alias}\\b\\s+(search|play|watch|find|show)\\b`).test(normalized)) {
+    return true;
+  }
+
+  return false;
 }
 
 function findFirstAliasMatch(normalized, aliases) {

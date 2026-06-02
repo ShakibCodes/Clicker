@@ -40,6 +40,13 @@ const CASUAL_QUESTIONS = [
   /\bcan you hear me\b/,
 ];
 
+const LOCAL_CONVERSATION_CONTEXT = [
+  /\b(i am|i'm|im)\b.+\b(on|in|live|streaming|recording)\b/,
+  /\b(say|tell|greet|wish|shout out)\b.+\b(to|for)\b/,
+  /\b(my|our)\s+(subscribers|chat|audience|viewers|followers|stream)\b/,
+  /\b(this|current)\s+(page|site|app|screen|window|tab)\b/,
+];
+
 function extractWebKnowledgeIntent(transcript) {
   const normalized = normalizeTranscript(transcript)
     .replace(/[^\w\s?.-]/g, " ")
@@ -51,6 +58,10 @@ function extractWebKnowledgeIntent(transcript) {
   }
 
   if (CASUAL_QUESTIONS.some((pattern) => pattern.test(normalized))) {
+    return null;
+  }
+
+  if (LOCAL_CONVERSATION_CONTEXT.some((pattern) => pattern.test(normalized))) {
     return null;
   }
 
