@@ -2,6 +2,7 @@
 const { desktopCapturer, ipcRenderer } = require("electron");
 
 const cursor = document.getElementById("secondary-cursor");
+const assistantNotch = document.getElementById("assistant-notch");
 const voiceBars = Array.from(document.querySelectorAll(".voice-bar"));
 const clickRing = document.getElementById("click-ring");
 const tooltip = document.getElementById("cursor-tooltip");
@@ -30,6 +31,19 @@ let activeOffsetY = followOffsetY;
 const captureIntervalMs = 2500;
 const recordingMs = 4500;
 let visualizerRafId = null;
+
+function updateAssistantNotch(nextX, nextY) {
+  if (!assistantNotch) {
+    return;
+  }
+
+  const notchCenterX = window.innerWidth / 2;
+  const horizontalDistance = Math.abs(nextX - notchCenterX);
+  const isNearCollapsedNotch = nextY <= 42 && horizontalDistance <= 92;
+  const isNearExpandedNotch = nextY <= 212 && horizontalDistance <= 228;
+  const shouldExpand = assistantNotch.classList.contains("expanded") ? isNearExpandedNotch : isNearCollapsedNotch;
+  assistantNotch.classList.toggle("expanded", shouldExpand);
+}
 
 function renderCursor() {
   const drawX = currentX + activeOffsetX;
@@ -95,13 +109,18 @@ ipcRenderer.on("cursor:position", (_event, payload) => {
   }
   targetX = payload.x;
   targetY = payload.y;
+  updateAssistantNotch(targetX, targetY);
 });
 
 function setStatus(text) {
   if (!statusPanel) {
     return;
   }
-  statusPanel.innerHTML = `<strong>AI Buddy</strong><br />${text}`;
+  statusPanel.textContent = String(text || "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function setVoiceVisualizerLevel(level) {
