@@ -598,6 +598,17 @@ ipcRenderer.on("assistant:toggle-listening", () => {
   void listenOnce();
 });
 
+ipcRenderer.on("assistant:status", (_event, payload) => {
+  setStatus(payload?.text || "Working...");
+});
+
+ipcRenderer.on("assistant:play-tts", (_event, payload) => {
+  if (payload?.statusText) {
+    setStatus(payload.statusText);
+  }
+  void playAssistantAudio(payload);
+});
+
 ipcRenderer.on("cursor:set-color", (_event, payload) => {
   const color = String(payload?.color || "blue").toLowerCase();
   if (!cursor || !allowedCursorColors.has(color)) {

@@ -8,6 +8,7 @@ const {
   extractGenericOpenWebsiteIntent,
   extractMultipleBrowserTaskIntents,
 } = require("./lib/browser-commands");
+const { answerBuddyChat, extractBuddyChatIntent } = require("./lib/buddy-chat");
 const { createActionExecutor } = require("./lib/action-executor");
 const {
   planActionWithGroq,
@@ -20,6 +21,7 @@ const { applyCursorColor, extractCursorColorIntent } = require("./lib/cursor-com
 const { createGuidedTourController } = require("./lib/guided-tour");
 const { buildReply } = require("./lib/reply-builder");
 const { normalizeTranscript } = require("./lib/text-utils");
+const { answerWebKnowledgeQuestion, extractWebKnowledgeIntent } = require("./lib/web-knowledge");
 
 let overlayWindow = null;
 let tickInterval = null;
@@ -127,8 +129,41 @@ async function resolveVoiceAction(transcript, payload) {
     return { message: browserCommands.openGenericWebsite(directGenericWebsite) };
   }
 
+  const webKnowledgeIntent = extractWebKnowledgeIntent(transcript);
+  if (webKnowledgeIntent) {
+    await speakInterimMessage(buildReply("webSearchStart"));
+    overlayWindow?.webContents.send("assistant:status", {
+      text: "Checking the web...",
+    });
+    return { message: await answerWebKnowledgeQuestion(webKnowledgeIntent) };
+  }
+
+  const buddyChatIntent = extractBuddyChatIntent(transcript);
+  if (buddyChatIntent) {
+    return { message: await answerBuddyChat(buddyChatIntent) };
+  }
+
   const plan = await planActionWithGroq(transcript, payload);
+  if (String(plan?.action || "none") === "none") {
+    return { message: await answerBuddyChat({ message: transcript }) };
+  }
   return actionExecutor.executePlannedAction(plan);
+}
+
+async function speakInterimMessage(message) {
+  const speechResult = await speakWithCloudTts(message).catch(() => ({ ok: false }));
+  if (speechResult.ok && speechResult.audioBase64) {
+    overlayWindow?.webContents.send("assistant:play-tts", {
+      audioBase64: speechResult.audioBase64,
+      mimeType: speechResult.mimeType,
+      statusText: message,
+    });
+    return;
+  }
+
+  overlayWindow?.webContents.send("assistant:status", {
+    text: message,
+  });
 }
 
 async function handleVoiceCommand(payload) {

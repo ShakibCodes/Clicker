@@ -167,11 +167,7 @@ function extractBrowserTaskIntent(transcript) {
     normalized.includes("song");
 
   if (!hasTaskIntent) {
-    return {
-      site: matchedRule.key,
-      query: "",
-      rule: matchedRule,
-    };
+    return null;
   }
 
   let candidate = normalized;

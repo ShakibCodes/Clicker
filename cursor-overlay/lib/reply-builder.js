@@ -50,6 +50,12 @@ const REPLY_TEMPLATES = {
     "Got it, cursor is {color} now.",
     "On it, changing the cursor to {color}.",
   ],
+  webSearchStart: [
+    "Okay, give me a few seconds. I’ll check the web for that.",
+    "Sure, let me look through the internet for a moment.",
+    "On it. I’ll search the web and pull together what looks reliable.",
+    "Got it. Give me a moment while I check current sources.",
+  ],
   unsupported: [
     "I heard you, but I cannot do that one yet.",
     "I got that, but that command is not ready yet.",
