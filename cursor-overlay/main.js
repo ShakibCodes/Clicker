@@ -9,6 +9,7 @@ const {
   extractMultipleBrowserTaskIntents,
 } = require("./lib/browser-commands");
 const { answerBuddyChat, extractBuddyChatIntent } = require("./lib/buddy-chat");
+const { createConversationContext } = require("./lib/conversation-context");
 const { createActionExecutor } = require("./lib/action-executor");
 const {
   planActionWithGroq,
@@ -27,6 +28,7 @@ let overlayWindow = null;
 let tickInterval = null;
 let latestCursorPoint = { x: 0, y: 0 };
 let overlayBounds = null;
+const conversationContext = createConversationContext();
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -131,21 +133,22 @@ async function resolveVoiceAction(transcript, payload) {
 
   const buddyChatIntent = extractBuddyChatIntent(transcript);
   if (buddyChatIntent) {
-    return { message: await answerBuddyChat(buddyChatIntent) };
+    return { message: await answerBuddyChat(buddyChatIntent), memoryType: "chat" };
   }
 
-  const webKnowledgeIntent = extractWebKnowledgeIntent(transcript);
+  const resolvedContext = conversationContext.resolveFollowUp(transcript);
+  const webKnowledgeIntent = extractWebKnowledgeIntent(transcript, resolvedContext);
   if (webKnowledgeIntent) {
     await speakInterimMessage(buildReply("webSearchStart"));
     overlayWindow?.webContents.send("assistant:status", {
       text: "Checking the web...",
     });
-    return { message: await answerWebKnowledgeQuestion(webKnowledgeIntent) };
+    return { message: await answerWebKnowledgeQuestion(webKnowledgeIntent), memoryType: "web", resolvedContext };
   }
 
   const plan = await planActionWithGroq(transcript, payload);
   if (String(plan?.action || "none") === "none") {
-    return { message: await answerBuddyChat({ message: transcript }) };
+    return { message: await answerBuddyChat({ message: transcript }), memoryType: "chat" };
   }
   return actionExecutor.executePlannedAction(plan);
 }
@@ -187,6 +190,7 @@ async function handleVoiceCommand(payload) {
   try {
     const actionResult = await resolveVoiceAction(transcript, payload);
     message = actionResult.message;
+    rememberConversationTurn(transcript, actionResult);
     suppressFinalTts = Boolean(actionResult.suppressFinalTts);
     shouldStartGuidedTour = Boolean(actionResult.shouldStartGuidedTour);
     softwareName = String(actionResult.softwareName || "");
@@ -237,6 +241,20 @@ async function handleVoiceCommand(payload) {
         }
       : null,
   };
+}
+
+function rememberConversationTurn(transcript, actionResult) {
+  const memoryType = actionResult?.memoryType || "";
+  if (memoryType !== "web" && memoryType !== "chat") {
+    return;
+  }
+
+  conversationContext.remember({
+    userText: transcript,
+    answer: actionResult.message,
+    topic: actionResult?.resolvedContext?.previous?.topic || "",
+    type: memoryType,
+  });
 }
 
 function registerIpcHandlers() {

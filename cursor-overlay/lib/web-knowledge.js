@@ -47,7 +47,7 @@ const LOCAL_CONVERSATION_CONTEXT = [
   /\b(this|current)\s+(page|site|app|screen|window|tab)\b/,
 ];
 
-function extractWebKnowledgeIntent(transcript) {
+function extractWebKnowledgeIntent(transcript, context = null) {
   const normalized = normalizeTranscript(transcript)
     .replace(/[^\w\s?.-]/g, " ")
     .replace(/\s+/g, " ")
@@ -72,7 +72,8 @@ function extractWebKnowledgeIntent(transcript) {
   const looksLikeQuestion =
     normalized.endsWith("?") ||
     QUESTION_STARTERS.some((starter) => normalized.startsWith(starter)) ||
-    CURRENT_TERMS.some((term) => new RegExp(`\\b${term}\\b`).test(normalized));
+    CURRENT_TERMS.some((term) => new RegExp(`\\b${term}\\b`).test(normalized)) ||
+    Boolean(context?.isFollowUp);
 
   if (!looksLikeQuestion) {
     return null;
@@ -80,6 +81,8 @@ function extractWebKnowledgeIntent(transcript) {
 
   return {
     query: normalized.replace(/\?+$/g, "").trim(),
+    resolvedQuery: String(context?.query || normalized).replace(/\?+$/g, "").trim(),
+    previousTopic: context?.previous?.topic || "",
     needsFreshSources: CURRENT_TERMS.some((term) => new RegExp(`\\b${term}\\b`).test(normalized)),
   };
 }
@@ -93,16 +96,20 @@ async function answerWebKnowledgeQuestion(intent) {
     return "I tried checking the web, but I could not get reliable source text for that right now.";
   }
 
-  return summarizeWithGroq(intent.query, sourceTexts);
+  return summarizeWithGroq(intent.query, sourceTexts, {
+    previousTopic: intent.previousTopic,
+    resolvedQuery: intent.resolvedQuery,
+  });
 }
 
 function buildSearchQuery(intent) {
+  const baseQuery = intent?.resolvedQuery || intent?.query || "";
   if (!intent?.needsFreshSources) {
-    return intent.query;
+    return baseQuery;
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  return `${intent.query} ${today}`;
+  return `${baseQuery} ${today}`;
 }
 
 async function searchDuckDuckGo(query) {
@@ -194,7 +201,7 @@ async function fetchReadableText(url) {
   }
 }
 
-async function summarizeWithGroq(question, sourceTexts) {
+async function summarizeWithGroq(question, sourceTexts, context = {}) {
   const apiKey = getGroqTextApiKey();
   if (!apiKey) {
     throw new Error("Missing GROQ_AI_API_FOR_TEXT in .env.local or environment.");
@@ -217,11 +224,11 @@ async function summarizeWithGroq(question, sourceTexts) {
         {
           role: "system",
           content:
-            "Answer like a concise voice assistant. Use only the provided web sources. If sources are weak or disagree, say that briefly. Keep it under 90 words. Do not mention URLs.",
+            "Answer like a concise voice assistant. Use only the provided web sources. If sources are weak or disagree, say that briefly. Keep it under 90 words. Do not mention URLs. If the user asks a follow-up with pronouns, resolve them using the provided conversation context.",
         },
         {
           role: "user",
-          content: `Question: ${question}\n\nWeb sources:\n${sourceBlock}`,
+          content: `Question: ${question}\nResolved question/search context: ${context.resolvedQuery || question}\nPrevious topic: ${context.previousTopic || "none"}\n\nWeb sources:\n${sourceBlock}`,
         },
       ],
     }),
