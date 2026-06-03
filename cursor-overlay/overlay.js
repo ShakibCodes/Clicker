@@ -18,6 +18,9 @@ let latestScreenFrame = null;
 let isListening = false;
 let isExecuting = false;
 let currentAssistantAudio = null;
+let currentAssistantObjectUrl = "";
+let currentAssistantResolve = null;
+let currentAssistantCleanup = null;
 let queuedInterruptionListen = false;
 let isGuidedTourRunning = false;
 let isGuidedControlActive = false;
@@ -220,6 +223,7 @@ async function playAssistantAudio(tts) {
   }
 
   try {
+    stopAssistantAudio({ interrupted: false });
     const mimeType = tts.mimeType || "audio/mpeg";
     const binary = atob(tts.audioBase64);
     const bytes = new Uint8Array(binary.length);
@@ -233,9 +237,11 @@ async function playAssistantAudio(tts) {
     const audio = new Audio(objectUrl);
     audio.volume = 1;
     currentAssistantAudio = audio;
+    currentAssistantObjectUrl = objectUrl;
 
     return await new Promise((resolve, reject) => {
       let wasInterrupted = false;
+      currentAssistantResolve = resolve;
       const stopBargeInMonitor = startBargeInMonitor(() => {
         if (audio.paused || audio.ended) {
           return;
@@ -257,13 +263,21 @@ async function playAssistantAudio(tts) {
       };
       const cleanup = () => {
         stopBargeInMonitor();
+        if (!audio.paused && !audio.ended) {
+          audio.pause();
+          audio.currentTime = 0;
+        }
         audio.removeEventListener("ended", onEnded);
         audio.removeEventListener("error", onError);
         URL.revokeObjectURL(objectUrl);
         if (currentAssistantAudio === audio) {
           currentAssistantAudio = null;
+          currentAssistantObjectUrl = "";
+          currentAssistantResolve = null;
+          currentAssistantCleanup = null;
         }
       };
+      currentAssistantCleanup = cleanup;
 
       audio.addEventListener("ended", onEnded);
       audio.addEventListener("error", onError);
@@ -279,6 +293,32 @@ async function playAssistantAudio(tts) {
   } catch (error) {
     setStatus(`Audio playback issue: ${error.message}`);
     return { interrupted: false };
+  }
+}
+
+function stopAssistantAudio(result = { interrupted: false }) {
+  const resolveCurrent = currentAssistantResolve;
+  const cleanupCurrent = currentAssistantCleanup;
+
+  if (cleanupCurrent) {
+    cleanupCurrent();
+  }
+
+  if (currentAssistantAudio) {
+    currentAssistantAudio.pause();
+    currentAssistantAudio.currentTime = 0;
+    currentAssistantAudio = null;
+  }
+
+  if (currentAssistantObjectUrl) {
+    URL.revokeObjectURL(currentAssistantObjectUrl);
+    currentAssistantObjectUrl = "";
+  }
+
+  currentAssistantResolve = null;
+  currentAssistantCleanup = null;
+  if (resolveCurrent) {
+    resolveCurrent(result);
   }
 }
 
@@ -569,6 +609,10 @@ async function listenOnce() {
       cursorContext,
     });
 
+    if (queuedInterruptionListen) {
+      return;
+    }
+
     if (!result.ok) {
       setStatus(result.message);
       const playback = await playAssistantAudio(result.tts);
@@ -606,7 +650,12 @@ ipcRenderer.on("assistant:play-tts", (_event, payload) => {
   if (payload?.statusText) {
     setStatus(payload.statusText);
   }
-  void playAssistantAudio(payload);
+  void playAssistantAudio(payload).then((playback) => {
+    if (playback?.interrupted) {
+      queuedInterruptionListen = true;
+      setStatus("Listening... go ahead.");
+    }
+  });
 });
 
 ipcRenderer.on("cursor:set-color", (_event, payload) => {

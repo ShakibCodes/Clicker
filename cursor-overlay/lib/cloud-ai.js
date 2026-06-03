@@ -72,7 +72,7 @@ async function transcribeWithGroq(audioBase64, mimeType) {
   const file = new File([blob], "voice.webm", { type: mimeType || "audio/webm" });
 
   const formData = new FormData();
-  formData.append("model", "whisper-large-v3-turbo");
+  formData.append("model", "whisper-large-v3");
   formData.append("file", file);
   formData.append("language", "en");
   formData.append("temperature", "0");

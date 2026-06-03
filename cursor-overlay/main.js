@@ -6,10 +6,10 @@ const {
   createBrowserCommandRunner,
   extractBrowserTaskIntent,
   extractGenericOpenWebsiteIntent,
-  extractMultipleBrowserTaskIntents,
 } = require("./lib/browser-commands");
-const { answerBuddyChat, extractBuddyChatIntent } = require("./lib/buddy-chat");
+const { answerBuddyChat } = require("./lib/buddy-chat");
 const { createConversationContext } = require("./lib/conversation-context");
+const { createConversationRouter } = require("./lib/conversation-router");
 const { createActionExecutor } = require("./lib/action-executor");
 const {
   planActionWithGroq,
@@ -18,11 +18,11 @@ const {
   speakWithCloudTts,
   transcribeWithGroq,
 } = require("./lib/cloud-ai");
-const { applyCursorColor, extractCursorColorIntent } = require("./lib/cursor-commands");
+const { applyCursorColor } = require("./lib/cursor-commands");
 const { createGuidedTourController } = require("./lib/guided-tour");
 const { buildReply } = require("./lib/reply-builder");
 const { normalizeTranscript } = require("./lib/text-utils");
-const { answerWebKnowledgeQuestion, extractWebKnowledgeIntent } = require("./lib/web-knowledge");
+const { answerWebKnowledgeQuestion } = require("./lib/web-knowledge");
 
 let overlayWindow = null;
 let tickInterval = null;
@@ -49,6 +49,17 @@ const guidedTour = createGuidedTourController({
   getOverlayWindow: () => overlayWindow,
   planVisualElementLocation: planVisualElementLocationWithGroq,
   planVisualGuidedTour: planVisualGuidedTourWithGroq,
+});
+const conversationRouter = createConversationRouter({
+  actionExecutor,
+  answerBuddyChat,
+  answerWebKnowledgeQuestion,
+  applyCursorColor,
+  browserCommands,
+  conversationContext,
+  overlayWindowProvider: () => overlayWindow,
+  planAction: planActionWithGroq,
+  speakInterim: speakInterimMessage,
 });
 
 function getVirtualBounds() {
@@ -111,46 +122,7 @@ function createOverlay() {
 }
 
 async function resolveVoiceAction(transcript, payload) {
-  const cursorColorIntent = extractCursorColorIntent(transcript);
-  if (cursorColorIntent) {
-    return applyCursorColor(overlayWindow, cursorColorIntent);
-  }
-
-  const multipleBrowserTasks = extractMultipleBrowserTaskIntents(transcript);
-  if (multipleBrowserTasks.length > 0) {
-    return { message: browserCommands.openMultipleBrowserTasks(multipleBrowserTasks) };
-  }
-
-  const directBrowserTask = extractBrowserTaskIntent(transcript);
-  if (directBrowserTask) {
-    return { message: await browserCommands.openBrowserTask(directBrowserTask) };
-  }
-
-  const directGenericWebsite = extractGenericOpenWebsiteIntent(transcript);
-  if (directGenericWebsite) {
-    return { message: browserCommands.openGenericWebsite(directGenericWebsite) };
-  }
-
-  const buddyChatIntent = extractBuddyChatIntent(transcript);
-  if (buddyChatIntent) {
-    return { message: await answerBuddyChat(buddyChatIntent), memoryType: "chat" };
-  }
-
-  const resolvedContext = conversationContext.resolveFollowUp(transcript);
-  const webKnowledgeIntent = extractWebKnowledgeIntent(transcript, resolvedContext);
-  if (webKnowledgeIntent) {
-    await speakInterimMessage(buildReply("webSearchStart"));
-    overlayWindow?.webContents.send("assistant:status", {
-      text: "Checking the web...",
-    });
-    return { message: await answerWebKnowledgeQuestion(webKnowledgeIntent), memoryType: "web", resolvedContext };
-  }
-
-  const plan = await planActionWithGroq(transcript, payload);
-  if (String(plan?.action || "none") === "none") {
-    return { message: await answerBuddyChat({ message: transcript }), memoryType: "chat" };
-  }
-  return actionExecutor.executePlannedAction(plan);
+  return conversationRouter.resolve(transcript, payload);
 }
 
 async function speakInterimMessage(message) {
