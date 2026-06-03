@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { getGroqTextApiKey } = require("./env");
 const { GROQ_MODELS } = require("./groq-models");
+const { sanitizeAssistantText } = require("./response-sanitizer");
 const { normalizeTranscript } = require("./text-utils");
 
 const CASUAL_PATTERNS = [
@@ -62,7 +63,7 @@ async function answerBuddyChat(intent) {
           {
             role: "system",
             content:
-              "You are AI Buddy, a warm, casual desktop voice companion. Reply naturally in one short sentence. Do not claim to browse the web. Do not mention URLs or commands unless the user asks.",
+              "You are AI Buddy, a warm, casual desktop voice companion. Reply naturally in one short sentence. Output ONLY the final spoken reply. Do not include reasoning, analysis, labels, quoted user text, or phrases like 'the user is asking'. Do not claim to browse the web. Do not mention URLs or commands unless the user asks.",
           },
           {
             role: "user",
@@ -77,10 +78,7 @@ async function answerBuddyChat(intent) {
     }
 
     const data = await response.json();
-    return String(data.choices?.[0]?.message?.content || fallback)
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 180);
+    return sanitizeAssistantText(data.choices?.[0]?.message?.content, fallback).slice(0, 180);
   } catch {
     return fallback;
   }

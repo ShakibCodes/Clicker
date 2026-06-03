@@ -7,9 +7,10 @@ const {
   getGroqTextApiKey,
 } = require("./env");
 const { GROQ_MODELS } = require("./groq-models");
+const { sanitizeAssistantText } = require("./response-sanitizer");
 
 function safeVoiceText(input) {
-  return String(input || "")
+  return sanitizeAssistantText(input)
     .replace(/[\r\n]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()

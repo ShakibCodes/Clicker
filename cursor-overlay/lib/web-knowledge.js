@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { getGroqTextApiKey } = require("./env");
 const { GROQ_MODELS } = require("./groq-models");
+const { sanitizeAssistantText } = require("./response-sanitizer");
 const { normalizeTranscript } = require("./text-utils");
 
 const QUESTION_STARTERS = [
@@ -277,7 +278,7 @@ async function summarizeWithGroq(question, sourceTexts, context = {}) {
   }
 
   const data = await response.json();
-  const answer = String(data.choices?.[0]?.message?.content || "").replace(/\s+/g, " ").trim();
+  const answer = sanitizeAssistantText(data.choices?.[0]?.message?.content);
   return answer || "I checked the web, but I could not form a reliable answer from the sources.";
 }
 
