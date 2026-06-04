@@ -8,6 +8,10 @@ const notchNavigationButtons = Array.from(document.querySelectorAll("[data-notch
 const notchBackButtons = Array.from(document.querySelectorAll("[data-notch-back]"));
 const gmailConnectButton = document.getElementById("gmail-connect-button");
 const gmailIntegrationStatus = document.getElementById("gmail-integration-status");
+const voiceStackStatus = document.getElementById("voice-stack-status");
+const elevenLabsVoiceBadge = document.getElementById("elevenlabs-voice-badge");
+const geminiVoiceBadge = document.getElementById("gemini-voice-badge");
+const geminiVoiceDetail = document.getElementById("gemini-voice-detail");
 const voiceBars = Array.from(document.querySelectorAll(".voice-bar"));
 const clickRing = document.getElementById("click-ring");
 const tooltip = document.getElementById("cursor-tooltip");
@@ -84,7 +88,7 @@ function setNotchInteractive(nextState) {
 }
 
 function showNotchView(viewName) {
-  const nextView = viewName === "integrations" ? "integrations" : "home";
+  const nextView = ["integrations", "voice"].includes(viewName) ? viewName : "home";
   activeNotchView = nextView;
 
   for (const view of notchViews) {
@@ -93,6 +97,9 @@ function showNotchView(viewName) {
 
   if (nextView === "integrations") {
     void refreshGmailIntegrationStatus();
+  }
+  if (nextView === "voice") {
+    void refreshVoiceStatus();
   }
 }
 
@@ -220,6 +227,34 @@ function setGmailIntegrationStatus(text, isConnected = false) {
   }
   gmailIntegrationStatus.textContent = String(text || "").slice(0, 70);
   gmailIntegrationStatus.classList.toggle("connected", isConnected);
+}
+
+async function refreshVoiceStatus() {
+  try {
+    const status = await ipcRenderer.invoke("assistant:voice-status");
+    setVoiceBadge(elevenLabsVoiceBadge, status?.elevenLabsConfigured ? "Ready" : "Missing", Boolean(status?.elevenLabsConfigured));
+    setVoiceBadge(geminiVoiceBadge, status?.fallbackReady ? "Ready" : "Missing", Boolean(status?.fallbackReady));
+    if (voiceStackStatus) {
+      voiceStackStatus.textContent = status?.fallbackReady ? "Fallback ready" : "Needs Gemini key";
+    }
+    if (geminiVoiceDetail) {
+      geminiVoiceDetail.textContent = `${status?.geminiModel || "Gemini TTS"} · ${status?.geminiVoice || "default voice"}`;
+    }
+  } catch {
+    setVoiceBadge(elevenLabsVoiceBadge, "Unknown", false);
+    setVoiceBadge(geminiVoiceBadge, "Unknown", false);
+    if (voiceStackStatus) {
+      voiceStackStatus.textContent = "Unavailable";
+    }
+  }
+}
+
+function setVoiceBadge(element, label, isReady) {
+  if (!element) {
+    return;
+  }
+  element.textContent = label;
+  element.classList.toggle("ready", isReady);
 }
 
 function setStatus(text) {

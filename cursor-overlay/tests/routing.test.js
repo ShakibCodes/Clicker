@@ -11,6 +11,7 @@ const {
 const { buildReply } = require("../lib/reply-builder");
 const { detectResponseLanguage } = require("../lib/text-utils");
 const { _test: gmailTest } = require("../lib/gmail-integration");
+const { _test: cloudAiTest } = require("../lib/cloud-ai");
 const { _test, extractWebKnowledgeIntent } = require("../lib/web-knowledge");
 
 function createTestRouter() {
@@ -162,6 +163,13 @@ async function run() {
     "Thanks a lot. I really appreciate it.",
   );
   assert.match(rawReply, /^[A-Za-z0-9_-]+$/);
+
+  assert.strictEqual(cloudAiTest.shouldFallbackToGemini({ reason: "ElevenLabs TTS failed (402): quota exceeded" }), true);
+  assert.strictEqual(cloudAiTest.shouldFallbackToGemini({ reason: "ElevenLabs TTS failed (500): server error" }), false);
+  const wav = cloudAiTest.wrapPcmAsWav(Buffer.alloc(8));
+  assert.strictEqual(wav.slice(0, 4).toString("ascii"), "RIFF");
+  assert.strictEqual(wav.slice(8, 12).toString("ascii"), "WAVE");
+  assert.strictEqual(wav.readUInt32LE(40), 8);
 }
 
 run()

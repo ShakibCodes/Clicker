@@ -397,6 +397,97 @@
         background: rgba(244, 244, 245, 0.16);
       }
 
+      .voice-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .voice-provider-card {
+        display: grid;
+        grid-template-columns: 36px 1fr auto;
+        align-items: center;
+        gap: 11px;
+        min-height: 50px;
+        border: 1px solid rgba(212, 212, 216, 0.14);
+        border-radius: 14px;
+        background:
+          radial-gradient(circle at top left, var(--voice-glow, rgba(255, 255, 255, 0.08)), transparent 42%),
+          rgba(24, 24, 27, 0.86);
+        padding: 10px;
+      }
+
+      .voice-logo {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 13px;
+        color: #f4f4f5;
+        background: rgba(244, 244, 245, 0.09);
+        font:
+          900 12px/1 "Segoe UI",
+          system-ui,
+          sans-serif;
+      }
+
+      .voice-logo.gemini {
+        background: linear-gradient(135deg, #8ab4f8, #c58af9 52%, #fdd663);
+        color: #111113;
+      }
+
+      .voice-copy {
+        min-width: 0;
+        display: grid;
+        gap: 3px;
+        color: #f4f4f5;
+        font:
+          800 11px/1.1 "Segoe UI",
+          system-ui,
+          sans-serif;
+      }
+
+      .voice-copy span {
+        overflow: hidden;
+        color: #a1a1aa;
+        font:
+          600 9px/1.2 "Segoe UI",
+          system-ui,
+          sans-serif;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .voice-badge {
+        border: 1px solid rgba(161, 161, 170, 0.16);
+        border-radius: 999px;
+        padding: 0 8px;
+        color: #a1a1aa;
+        background: rgba(24, 24, 27, 0.76);
+        font:
+          800 8px/19px "Segoe UI",
+          system-ui,
+          sans-serif;
+        white-space: nowrap;
+      }
+
+      .voice-badge.ready {
+        border-color: rgba(34, 197, 94, 0.26);
+        color: #86efac;
+        background: rgba(20, 83, 45, 0.24);
+      }
+
+      .voice-note {
+        border: 1px dashed rgba(212, 212, 216, 0.16);
+        border-radius: 12px;
+        color: #d4d4d8;
+        background: rgba(24, 24, 27, 0.5);
+        padding: 10px 12px;
+        font:
+          650 10px/1.35 "Segoe UI",
+          system-ui,
+          sans-serif;
+      }
+
       #secondary-cursor.clicking {
         filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.95));
       }
@@ -535,7 +626,7 @@
             <div id="assistant-status" class="notch-status">Ready</div>
           </div>
           <div class="notch-grid">
-            <button class="notch-tile" type="button" data-notch-target="config">Config<span>Voice and behavior</span></button>
+            <button class="notch-tile" type="button" data-notch-target="voice">AI Voice<span>ElevenLabs + Gemini</span></button>
             <button class="notch-tile" type="button" data-notch-target="integrations">Integrations<span>Connected apps</span></button>
             <button class="notch-tile" type="button" data-notch-target="connectors">Connectors<span>Web and tools</span></button>
             <button class="notch-tile" type="button" data-notch-target="commands">Commands<span>Open, search, guide</span></button>
@@ -626,6 +717,35 @@
                 <span>Team messages</span>
               </div>
               <div class="integration-chip coming-soon">Planned</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="notch-view" data-notch-view="voice">
+          <div class="notch-title-row">
+            <button class="notch-back" type="button" data-notch-back aria-label="Back">‹</button>
+            <strong>AI Voice</strong>
+            <div id="voice-stack-status" class="notch-status">Checking</div>
+          </div>
+          <div class="voice-stack">
+            <div class="voice-provider-card" style="--voice-glow: rgba(124, 58, 237, 0.18)">
+              <div class="voice-logo">11</div>
+              <div class="voice-copy">
+                ElevenLabs
+                <span>Primary expressive voice</span>
+              </div>
+              <div id="elevenlabs-voice-badge" class="voice-badge">Checking</div>
+            </div>
+            <div class="voice-provider-card" style="--voice-glow: rgba(138, 180, 248, 0.18)">
+              <div class="voice-logo gemini">✦</div>
+              <div class="voice-copy">
+                Gemini TTS
+                <span id="gemini-voice-detail">Fallback voice from Google AI Studio</span>
+              </div>
+              <div id="gemini-voice-badge" class="voice-badge">Checking</div>
+            </div>
+            <div class="voice-note">
+              If ElevenLabs hits quota, credits, billing, or rate limits, Buddy automatically speaks with Gemini instead.
             </div>
           </div>
         </div>

@@ -3,6 +3,9 @@ const {
   getElevenLabsApiKey,
   getElevenLabsModelId,
   getElevenLabsVoiceId,
+  getGeminiApiKey,
+  getGeminiTtsModelId,
+  getGeminiTtsVoiceName,
   getGroqSpeechApiKey,
   getGroqTextApiKey,
 } = require("./env");
@@ -18,14 +21,35 @@ function safeVoiceText(input) {
 }
 
 async function speakWithCloudTts(text) {
-  const elevenLabsApiKey = getElevenLabsApiKey();
-  if (!elevenLabsApiKey) {
-    return { ok: false, reason: "ELEVENLABS_API_KEY is missing." };
-  }
-
   const spokenText = safeVoiceText(text);
   if (!spokenText) {
     return { ok: false, reason: "No text available to speak." };
+  }
+
+  const elevenLabsResult = await speakWithElevenLabs(spokenText);
+  if (elevenLabsResult.ok || !shouldFallbackToGemini(elevenLabsResult)) {
+    return elevenLabsResult;
+  }
+
+  const geminiResult = await speakWithGeminiTts(spokenText);
+  if (geminiResult.ok) {
+    return {
+      ...geminiResult,
+      fallbackFrom: "elevenlabs",
+      fallbackReason: elevenLabsResult.reason,
+    };
+  }
+
+  return {
+    ok: false,
+    reason: `${elevenLabsResult.reason}; Gemini fallback failed: ${geminiResult.reason}`,
+  };
+}
+
+async function speakWithElevenLabs(spokenText) {
+  const elevenLabsApiKey = getElevenLabsApiKey();
+  if (!elevenLabsApiKey) {
+    return { ok: false, reason: "ELEVENLABS_API_KEY is missing." };
   }
 
   const voiceId = getElevenLabsVoiceId();
@@ -59,7 +83,108 @@ async function speakWithCloudTts(text) {
     ok: true,
     audioBase64: Buffer.from(audioArrayBuffer).toString("base64"),
     mimeType: "audio/mpeg",
+    provider: "elevenlabs",
   };
+}
+
+async function speakWithGeminiTts(spokenText) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    return { ok: false, reason: "GEMINI_API_KEY is missing." };
+  }
+
+  const modelId = getGeminiTtsModelId();
+  const voiceName = getGeminiTtsVoiceName();
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              text: `Say naturally, warmly, and clearly: ${spokenText}`,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName,
+            },
+          },
+        },
+      },
+      model: modelId,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { ok: false, reason: `Gemini TTS failed (${response.status}): ${body}` };
+  }
+
+  const data = await response.json();
+  const inlineAudio = data.candidates?.[0]?.content?.parts?.find((part) => part.inlineData?.data)?.inlineData;
+  const pcmBase64 = inlineAudio?.data || "";
+  if (!pcmBase64) {
+    return { ok: false, reason: "Gemini TTS returned no audio." };
+  }
+
+  const pcmBuffer = Buffer.from(pcmBase64, "base64");
+  const wavBuffer = wrapPcmAsWav(pcmBuffer);
+  return {
+    ok: true,
+    audioBase64: wavBuffer.toString("base64"),
+    mimeType: "audio/wav",
+    provider: "gemini",
+  };
+}
+
+function shouldFallbackToGemini(result) {
+  const reason = String(result?.reason || "").toLowerCase();
+  return (
+    reason.includes("missing") ||
+    reason.includes("401") ||
+    reason.includes("402") ||
+    reason.includes("403") ||
+    reason.includes("429") ||
+    reason.includes("quota") ||
+    reason.includes("credit") ||
+    reason.includes("limit") ||
+    reason.includes("billing")
+  );
+}
+
+function wrapPcmAsWav(pcmBuffer, options = {}) {
+  const channels = options.channels || 1;
+  const sampleRate = options.sampleRate || 24000;
+  const bitsPerSample = options.bitsPerSample || 16;
+  const byteRate = (sampleRate * channels * bitsPerSample) / 8;
+  const blockAlign = (channels * bitsPerSample) / 8;
+  const header = Buffer.alloc(44);
+
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcmBuffer.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcmBuffer.length, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
 }
 
 async function transcribeWithGroq(audioBase64, mimeType) {
@@ -324,6 +449,10 @@ async function planVisualElementLocationWithGroq(targetName, context) {
 }
 
 module.exports = {
+  _test: {
+    shouldFallbackToGemini,
+    wrapPcmAsWav,
+  },
   planActionWithGroq,
   planVisualElementLocationWithGroq,
   planVisualGuidedTourWithGroq,

@@ -14,6 +14,12 @@ const { createActionExecutor } = require("./lib/action-executor");
 const { createDecisionLog } = require("./lib/decision-log");
 const { createGmailIntegration } = require("./lib/gmail-integration");
 const {
+  getElevenLabsApiKey,
+  getGeminiApiKey,
+  getGeminiTtsModelId,
+  getGeminiTtsVoiceName,
+} = require("./lib/env");
+const {
   planActionWithGroq,
   planVisualElementLocationWithGroq,
   planVisualGuidedTourWithGroq,
@@ -272,6 +278,17 @@ function registerIpcHandlers() {
 
   ipcMain.handle("assistant:gmail-disconnect", () => {
     return gmailIntegration.disconnect();
+  });
+
+  ipcMain.handle("assistant:voice-status", () => {
+    return {
+      elevenLabsConfigured: Boolean(getElevenLabsApiKey()),
+      fallbackProvider: "Gemini",
+      fallbackReady: Boolean(getGeminiApiKey()),
+      geminiModel: getGeminiTtsModelId(),
+      geminiVoice: getGeminiTtsVoiceName(),
+      primaryProvider: "ElevenLabs",
+    };
   });
 
   ipcMain.handle("assistant:listen-and-execute", async (_event, payload) => {

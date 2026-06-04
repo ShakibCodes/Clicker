@@ -87,10 +87,25 @@ function getGoogleOAuthClientSecret() {
   return process.env.GOOGLE_OAUTH_CLIENT_SECRET || readEnvValue("GOOGLE_OAUTH_CLIENT_SECRET");
 }
 
+function getGeminiApiKey() {
+  return process.env.GEMINI_API_KEY || readEnvValue("GEMINI_API_KEY") || process.env.GOOGLE_AI_API_KEY || readEnvValue("GOOGLE_AI_API_KEY");
+}
+
+function getGeminiTtsModelId() {
+  return process.env.GEMINI_TTS_MODEL_ID || readEnvValue("GEMINI_TTS_MODEL_ID") || "gemini-3.1-flash-tts-preview";
+}
+
+function getGeminiTtsVoiceName() {
+  return process.env.GEMINI_TTS_VOICE_NAME || readEnvValue("GEMINI_TTS_VOICE_NAME") || "Kore";
+}
+
 module.exports = {
   getElevenLabsApiKey,
   getElevenLabsModelId,
   getElevenLabsVoiceId,
+  getGeminiApiKey,
+  getGeminiTtsModelId,
+  getGeminiTtsVoiceName,
   getGoogleOAuthClientId,
   getGoogleOAuthClientSecret,
   getGroqSpeechApiKey,
