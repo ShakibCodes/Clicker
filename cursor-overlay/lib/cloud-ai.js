@@ -4,7 +4,7 @@ const {
   getElevenLabsModelId,
   getElevenLabsVoiceId,
   getGeminiApiKey,
-  getGeminiTtsModelId,
+  getGeminiTtsModelIds,
   getGeminiTtsVoiceName,
   getGroqSpeechApiKey,
   getGroqTextApiKey,
@@ -93,7 +93,32 @@ async function speakWithGeminiTts(spokenText) {
     return { ok: false, reason: "GEMINI_API_KEY is missing." };
   }
 
-  const modelId = getGeminiTtsModelId();
+  const modelIds = getGeminiTtsModelIds();
+  const errors = [];
+  for (const modelId of modelIds) {
+    const result = await speakWithGeminiTtsModel(spokenText, {
+      apiKey,
+      modelId,
+    });
+    if (result.ok) {
+      return result;
+    }
+
+    errors.push(`${modelId}: ${result.reason}`);
+    if (!shouldFallbackToNextGeminiModel(result)) {
+      break;
+    }
+  }
+
+  return {
+    ok: false,
+    reason: errors.join(" | ") || "Gemini TTS failed.",
+  };
+}
+
+async function speakWithGeminiTtsModel(spokenText, options) {
+  const modelId = options.modelId;
+  const apiKey = options.apiKey;
   const voiceName = getGeminiTtsVoiceName();
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent`, {
     method: "POST",
@@ -144,6 +169,7 @@ async function speakWithGeminiTts(spokenText) {
     audioBase64: wavBuffer.toString("base64"),
     mimeType: "audio/wav",
     provider: "gemini",
+    providerModel: modelId,
   };
 }
 
@@ -159,6 +185,18 @@ function shouldFallbackToGemini(result) {
     reason.includes("credit") ||
     reason.includes("limit") ||
     reason.includes("billing")
+  );
+}
+
+function shouldFallbackToNextGeminiModel(result) {
+  const reason = String(result?.reason || "").toLowerCase();
+  return (
+    reason.includes("429") ||
+    reason.includes("quota") ||
+    reason.includes("rate") ||
+    reason.includes("resource_exhausted") ||
+    reason.includes("exceeded") ||
+    reason.includes("limit")
   );
 }
 
@@ -450,6 +488,7 @@ async function planVisualElementLocationWithGroq(targetName, context) {
 
 module.exports = {
   _test: {
+    shouldFallbackToNextGeminiModel,
     shouldFallbackToGemini,
     wrapPcmAsWav,
   },

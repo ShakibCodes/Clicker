@@ -36,6 +36,7 @@ let listenSessionId = 0;
 let tooltipText = "";
 let isNotchInteractive = false;
 let activeNotchView = "home";
+let notchTransitionId = 0;
 const VOICE_STATES = {
   IDLE: "idle",
   LISTENING: "listening",
@@ -67,7 +68,7 @@ function updateAssistantNotch(nextX, nextY) {
   const notchCenterX = window.innerWidth / 2;
   const horizontalDistance = Math.abs(nextX - notchCenterX);
   const isNearCollapsedNotch = nextY <= 42 && horizontalDistance <= 92;
-  const isNearExpandedNotch = nextY <= 212 && horizontalDistance <= 228;
+  const isNearExpandedNotch = nextY <= 292 && horizontalDistance <= 248;
   const shouldExpand = assistantNotch.classList.contains("expanded") ? isNearExpandedNotch : isNearCollapsedNotch;
   assistantNotch.classList.toggle("expanded", shouldExpand);
   assistantNotch.classList.toggle("interactive", shouldExpand);
@@ -89,11 +90,40 @@ function setNotchInteractive(nextState) {
 
 function showNotchView(viewName) {
   const nextView = ["integrations", "voice"].includes(viewName) ? viewName : "home";
+  if (activeNotchView === nextView) {
+    return;
+  }
+
+  const previousView = activeNotchView;
+  const isBackNavigation = nextView === "home";
+  const transitionId = notchTransitionId + 1;
+  notchTransitionId = transitionId;
   activeNotchView = nextView;
 
   for (const view of notchViews) {
-    view.classList.toggle("active", view.dataset.notchView === nextView);
+    const isPrevious = view.dataset.notchView === previousView;
+    const isNext = view.dataset.notchView === nextView;
+    view.classList.toggle("active", isNext);
+    view.classList.toggle("exiting", isPrevious && !isNext);
+    view.style.setProperty("--view-enter-x", isBackNavigation ? "-22px" : "22px");
+    view.style.setProperty("--view-exit-x", isBackNavigation ? "22px" : "-22px");
+
+    if (isNext) {
+      const scrollArea = view.querySelector(".notch-scroll");
+      if (scrollArea) {
+        scrollArea.scrollTop = 0;
+      }
+    }
   }
+
+  window.setTimeout(() => {
+    if (notchTransitionId !== transitionId) {
+      return;
+    }
+    for (const view of notchViews) {
+      view.classList.remove("exiting");
+    }
+  }, 260);
 
   if (nextView === "integrations") {
     void refreshGmailIntegrationStatus();
@@ -238,7 +268,8 @@ async function refreshVoiceStatus() {
       voiceStackStatus.textContent = status?.fallbackReady ? "Fallback ready" : "Needs Gemini key";
     }
     if (geminiVoiceDetail) {
-      geminiVoiceDetail.textContent = `${status?.geminiModel || "Gemini TTS"} · ${status?.geminiVoice || "default voice"}`;
+      const models = Array.isArray(status?.geminiModels) && status.geminiModels.length > 0 ? status.geminiModels.join(" → ") : status?.geminiModel || "Gemini TTS";
+      geminiVoiceDetail.textContent = `${models} · ${status?.geminiVoice || "default voice"}`;
     }
   } catch {
     setVoiceBadge(elevenLabsVoiceBadge, "Unknown", false);

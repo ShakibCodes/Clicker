@@ -17,6 +17,7 @@ const {
   getElevenLabsApiKey,
   getGeminiApiKey,
   getGeminiTtsModelId,
+  getGeminiTtsModelIds,
   getGeminiTtsVoiceName,
 } = require("./lib/env");
 const {
@@ -286,6 +287,7 @@ function registerIpcHandlers() {
       fallbackProvider: "Gemini",
       fallbackReady: Boolean(getGeminiApiKey()),
       geminiModel: getGeminiTtsModelId(),
+      geminiModels: getGeminiTtsModelIds(),
       geminiVoice: getGeminiTtsVoiceName(),
       primaryProvider: "ElevenLabs",
     };

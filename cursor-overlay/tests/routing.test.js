@@ -166,6 +166,8 @@ async function run() {
 
   assert.strictEqual(cloudAiTest.shouldFallbackToGemini({ reason: "ElevenLabs TTS failed (402): quota exceeded" }), true);
   assert.strictEqual(cloudAiTest.shouldFallbackToGemini({ reason: "ElevenLabs TTS failed (500): server error" }), false);
+  assert.strictEqual(cloudAiTest.shouldFallbackToNextGeminiModel({ reason: "Gemini TTS failed (429): quota exceeded" }), true);
+  assert.strictEqual(cloudAiTest.shouldFallbackToNextGeminiModel({ reason: "Gemini TTS failed (401): invalid key" }), false);
   const wav = cloudAiTest.wrapPcmAsWav(Buffer.alloc(8));
   assert.strictEqual(wav.slice(0, 4).toString("ascii"), "RIFF");
   assert.strictEqual(wav.slice(8, 12).toString("ascii"), "WAVE");

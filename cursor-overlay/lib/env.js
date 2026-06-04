@@ -95,6 +95,18 @@ function getGeminiTtsModelId() {
   return process.env.GEMINI_TTS_MODEL_ID || readEnvValue("GEMINI_TTS_MODEL_ID") || "gemini-3.1-flash-tts-preview";
 }
 
+function getGeminiTtsModelIds() {
+  const configuredModels = process.env.GEMINI_TTS_MODEL_IDS || readEnvValue("GEMINI_TTS_MODEL_IDS");
+  const models = configuredModels
+    ? configuredModels
+        .split(",")
+        .map((model) => model.trim())
+        .filter(Boolean)
+    : [getGeminiTtsModelId(), "gemini-2.5-flash-preview-tts"];
+
+  return Array.from(new Set(models));
+}
+
 function getGeminiTtsVoiceName() {
   return process.env.GEMINI_TTS_VOICE_NAME || readEnvValue("GEMINI_TTS_VOICE_NAME") || "Kore";
 }
@@ -105,6 +117,7 @@ module.exports = {
   getElevenLabsVoiceId,
   getGeminiApiKey,
   getGeminiTtsModelId,
+  getGeminiTtsModelIds,
   getGeminiTtsVoiceName,
   getGoogleOAuthClientId,
   getGoogleOAuthClientSecret,
