@@ -13,6 +13,7 @@ const { createConversationRouter } = require("./lib/conversation-router");
 const { createActionExecutor } = require("./lib/action-executor");
 const { createDecisionLog } = require("./lib/decision-log");
 const { createGmailIntegration } = require("./lib/gmail-integration");
+const { createGoogleAccountIntegration } = require("./lib/google-account-integration");
 const { createGoogleCalendarIntegration } = require("./lib/google-calendar-integration");
 const {
   getElevenLabsApiKey,
@@ -41,13 +42,15 @@ let overlayBounds = null;
 let isNotchInteractive = false;
 const conversationContext = createConversationContext();
 const decisionLog = createDecisionLog();
-const gmailIntegration = createGmailIntegration({
+const googleAccountIntegration = createGoogleAccountIntegration({
   getUserDataPath: () => app.getPath("userData"),
   shell,
 });
+const gmailIntegration = createGmailIntegration({
+  googleAccount: googleAccountIntegration,
+});
 const calendarIntegration = createGoogleCalendarIntegration({
-  getUserDataPath: () => app.getPath("userData"),
-  shell,
+  googleAccount: googleAccountIntegration,
 });
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
@@ -273,6 +276,18 @@ function registerIpcHandlers() {
 
   ipcMain.handle("assistant:decision-log", () => {
     return decisionLog.list();
+  });
+
+  ipcMain.handle("assistant:google-status", () => {
+    return googleAccountIntegration.getStatus();
+  });
+
+  ipcMain.handle("assistant:google-connect", async () => {
+    return googleAccountIntegration.connect();
+  });
+
+  ipcMain.handle("assistant:google-disconnect", () => {
+    return googleAccountIntegration.disconnect();
   });
 
   ipcMain.handle("assistant:gmail-status", () => {

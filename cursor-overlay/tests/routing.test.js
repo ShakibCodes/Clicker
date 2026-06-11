@@ -11,6 +11,7 @@ const {
 const { buildReply } = require("../lib/reply-builder");
 const { detectResponseLanguage } = require("../lib/text-utils");
 const { _test: gmailTest } = require("../lib/gmail-integration");
+const { _test: googleAccountTest } = require("../lib/google-account-integration");
 const { _test: calendarTest } = require("../lib/google-calendar-integration");
 const { _test: cloudAiTest } = require("../lib/cloud-ai");
 const { _test, extractWebKnowledgeIntent } = require("../lib/web-knowledge");
@@ -178,6 +179,11 @@ async function run() {
   const calendarResult = await calendarRouter.router.resolve("what meetings do I have today", {});
   assert.strictEqual(calendarResult.route, "calendar");
   assert.match(calendarResult.message, /^calendar:/);
+
+  assert.deepStrictEqual(googleAccountTest.parseScopeString("scope-a  scope-b"), ["scope-a", "scope-b"]);
+  assert.deepStrictEqual(googleAccountTest.mergeScopes(["scope-a"], ["scope-b", "scope-a"]), ["scope-a", "scope-b"]);
+  assert.strictEqual(googleAccountTest.hasScopes(["scope-a", "scope-b"], ["scope-b"]), true);
+  assert.strictEqual(googleAccountTest.hasScopes(["scope-a"], ["scope-b"]), false);
 
   assert.strictEqual(cloudAiTest.shouldFallbackToGemini({ reason: "ElevenLabs TTS failed (402): quota exceeded" }), true);
   assert.strictEqual(cloudAiTest.shouldFallbackToGemini({ reason: "ElevenLabs TTS failed (500): server error" }), false);

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { getGroqTextApiKey } = require("./env");
+const { getAssistantIdentityLine } = require("./assistant-identity");
 const { GROQ_MODELS } = require("./groq-models");
 const { sanitizeAssistantText } = require("./response-sanitizer");
 const { detectResponseLanguage, getLanguageInstruction, normalizeTranscript } = require("./text-utils");
@@ -68,7 +69,7 @@ async function answerBuddyChat(intent) {
           {
             role: "system",
             content:
-              `You are AI Buddy, a warm, casual desktop voice companion. ${getLanguageInstruction(responseLanguage)} Output ONLY the final spoken reply. Do not include reasoning, analysis, labels, quoted user text, or phrases like 'the user is asking'. Do not claim to browse the web. Do not mention URLs or commands unless the user asks.`,
+              `You are ${getAssistantIdentityLine()} ${getLanguageInstruction(responseLanguage)} Output ONLY the final spoken reply. Do not include reasoning, analysis, labels, quoted user text, or phrases like 'the user is asking'. Do not claim to browse the web. Do not mention URLs or commands unless the user asks.`,
           },
           {
             role: "user",
@@ -159,13 +160,13 @@ function answerBuddyChatFallback(message) {
     return "Good night. Rest easy.";
   }
   if (/\b(are you there|can you hear me|you there)\b/.test(normalized)) {
-    return "Yep, I'm right here.";
+    return "Yep, L.A.R.V.I.S. is right here.";
   }
   if (/\b(i am bored|i'm bored|im bored)\b/.test(normalized)) {
     return "Fair. Want me to help you find something interesting to do?";
   }
 
-  return "I'm here with you. Tell me what's on your mind.";
+  return "L.A.R.V.I.S. is here with you. Tell me what's on your mind.";
 }
 
 function isDirectSpeechRequest(message) {

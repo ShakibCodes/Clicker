@@ -6,6 +6,8 @@ const assistantNotch = document.getElementById("assistant-notch");
 const notchViews = Array.from(document.querySelectorAll("[data-notch-view]"));
 const notchNavigationButtons = Array.from(document.querySelectorAll("[data-notch-target]"));
 const notchBackButtons = Array.from(document.querySelectorAll("[data-notch-back]"));
+const googleConnectButton = document.getElementById("google-connect-button");
+const googleAccountStatus = document.getElementById("google-account-status");
 const gmailConnectButton = document.getElementById("gmail-connect-button");
 const gmailIntegrationStatus = document.getElementById("gmail-integration-status");
 const calendarConnectButton = document.getElementById("calendar-connect-button");
@@ -39,6 +41,9 @@ let tooltipText = "";
 let isNotchInteractive = false;
 let activeNotchView = "home";
 let notchTransitionId = 0;
+let isGoogleConnected = false;
+let isGmailEnabled = false;
+let isCalendarEnabled = false;
 const VOICE_STATES = {
   IDLE: "idle",
   LISTENING: "listening",
@@ -128,8 +133,7 @@ function showNotchView(viewName) {
   }, 260);
 
   if (nextView === "integrations") {
-    void refreshGmailIntegrationStatus();
-    void refreshCalendarIntegrationStatus();
+    void refreshGoogleIntegrationStatus();
   }
   if (nextView === "voice") {
     void refreshVoiceStatus();
@@ -215,18 +219,34 @@ for (const button of notchBackButtons) {
   });
 }
 
+if (googleConnectButton) {
+  googleConnectButton.addEventListener("click", async () => {
+    googleConnectButton.disabled = true;
+    googleConnectButton.textContent = isGoogleConnected ? "Removing" : "Opening";
+    setGoogleAccountStatus(isGoogleConnected ? "Disconnecting Google..." : "Waiting for Google...");
+    try {
+      const result = await ipcRenderer.invoke(isGoogleConnected ? "assistant:google-disconnect" : "assistant:google-connect");
+      setGoogleAccountStatus(result?.email ? `Connected: ${result.email}` : result?.message || "Updated", !isGoogleConnected);
+      await refreshGoogleIntegrationStatus();
+    } catch (error) {
+      setGoogleAccountStatus(error.message || "Google update failed");
+    } finally {
+      googleConnectButton.disabled = false;
+    }
+  });
+}
+
 if (gmailConnectButton) {
   gmailConnectButton.addEventListener("click", async () => {
     gmailConnectButton.disabled = true;
-    gmailConnectButton.textContent = "Opening";
-    setGmailIntegrationStatus("Waiting for Google...");
+    gmailConnectButton.textContent = isGmailEnabled ? "Turning off" : "Opening";
+    setGmailIntegrationStatus(isGmailEnabled ? "Turning Gmail off..." : "Waiting for Google...");
     try {
-      const result = await ipcRenderer.invoke("assistant:gmail-connect");
-      setGmailIntegrationStatus(result?.email ? `Connected: ${result.email}` : result?.message || "Connected", true);
-      gmailConnectButton.textContent = "Reconnect";
+      const result = await ipcRenderer.invoke(isGmailEnabled ? "assistant:gmail-disconnect" : "assistant:gmail-connect");
+      setGmailIntegrationStatus(result?.message || "Updated", !isGmailEnabled);
+      await refreshGoogleIntegrationStatus();
     } catch (error) {
-      setGmailIntegrationStatus(error.message || "Connect failed");
-      gmailConnectButton.textContent = "Connect";
+      setGmailIntegrationStatus(error.message || "Update failed");
     } finally {
       gmailConnectButton.disabled = false;
     }
@@ -236,40 +256,52 @@ if (gmailConnectButton) {
 if (calendarConnectButton) {
   calendarConnectButton.addEventListener("click", async () => {
     calendarConnectButton.disabled = true;
-    calendarConnectButton.textContent = "Opening";
-    setCalendarIntegrationStatus("Waiting for Google...");
+    calendarConnectButton.textContent = isCalendarEnabled ? "Turning off" : "Opening";
+    setCalendarIntegrationStatus(isCalendarEnabled ? "Turning Calendar off..." : "Waiting for Google...");
     try {
-      const result = await ipcRenderer.invoke("assistant:calendar-connect");
-      setCalendarIntegrationStatus(result?.email ? `Connected: ${result.email}` : result?.message || "Connected", true);
-      calendarConnectButton.textContent = "Reconnect";
+      const result = await ipcRenderer.invoke(isCalendarEnabled ? "assistant:calendar-disconnect" : "assistant:calendar-connect");
+      setCalendarIntegrationStatus(result?.message || "Updated", !isCalendarEnabled);
+      await refreshGoogleIntegrationStatus();
     } catch (error) {
-      setCalendarIntegrationStatus(error.message || "Connect failed");
-      calendarConnectButton.textContent = "Connect";
+      setCalendarIntegrationStatus(error.message || "Update failed");
     } finally {
       calendarConnectButton.disabled = false;
     }
   });
 }
 
-async function refreshGmailIntegrationStatus() {
-  if (!gmailIntegrationStatus || !gmailConnectButton) {
+async function refreshGoogleIntegrationStatus() {
+  try {
+    const status = await ipcRenderer.invoke("assistant:google-status");
+    isGoogleConnected = Boolean(status?.connected);
+    isGmailEnabled = Boolean(status?.services?.gmail?.connected);
+    isCalendarEnabled = Boolean(status?.services?.calendar?.connected);
+
+    setGoogleAccountStatus(status?.email ? `Connected: ${status.email}` : isGoogleConnected ? "Connected" : "Not connected", isGoogleConnected);
+    if (googleConnectButton) {
+      googleConnectButton.textContent = isGoogleConnected ? "Disconnect" : "Connect";
+    }
+    setGmailIntegrationStatus(isGmailEnabled ? "Enabled" : isGoogleConnected ? "Off" : "Connect Google first", isGmailEnabled);
+    if (gmailConnectButton) {
+      gmailConnectButton.textContent = isGmailEnabled ? "Turn off" : "Enable";
+    }
+    setCalendarIntegrationStatus(isCalendarEnabled ? "Enabled" : isGoogleConnected ? "Off" : "Connect Google first", isCalendarEnabled);
+    if (calendarConnectButton) {
+      calendarConnectButton.textContent = isCalendarEnabled ? "Turn off" : "Enable";
+    }
+  } catch {
+    setGoogleAccountStatus("Status unavailable");
+    setGmailIntegrationStatus("Status unavailable");
+    setCalendarIntegrationStatus("Status unavailable");
+  }
+}
+
+function setGoogleAccountStatus(text, isConnected = false) {
+  if (!googleAccountStatus) {
     return;
   }
-
-  try {
-    const status = await ipcRenderer.invoke("assistant:gmail-status");
-    if (status?.connected) {
-      setGmailIntegrationStatus(status.email ? `Connected: ${status.email}` : "Connected", true);
-      gmailConnectButton.textContent = "Reconnect";
-      return;
-    }
-
-    setGmailIntegrationStatus("Not connected", false);
-    gmailConnectButton.textContent = "Connect";
-  } catch {
-    setGmailIntegrationStatus("Status unavailable");
-    gmailConnectButton.textContent = "Connect";
-  }
+  googleAccountStatus.textContent = String(text || "").slice(0, 70);
+  googleAccountStatus.classList.toggle("connected", isConnected);
 }
 
 function setGmailIntegrationStatus(text, isConnected = false) {
@@ -278,27 +310,6 @@ function setGmailIntegrationStatus(text, isConnected = false) {
   }
   gmailIntegrationStatus.textContent = String(text || "").slice(0, 70);
   gmailIntegrationStatus.classList.toggle("connected", isConnected);
-}
-
-async function refreshCalendarIntegrationStatus() {
-  if (!calendarIntegrationStatus || !calendarConnectButton) {
-    return;
-  }
-
-  try {
-    const status = await ipcRenderer.invoke("assistant:calendar-status");
-    if (status?.connected) {
-      setCalendarIntegrationStatus(status.email ? `Connected: ${status.email}` : "Connected", true);
-      calendarConnectButton.textContent = "Reconnect";
-      return;
-    }
-
-    setCalendarIntegrationStatus("Not connected", false);
-    calendarConnectButton.textContent = "Connect";
-  } catch {
-    setCalendarIntegrationStatus("Status unavailable");
-    calendarConnectButton.textContent = "Connect";
-  }
 }
 
 function setCalendarIntegrationStatus(text, isConnected = false) {

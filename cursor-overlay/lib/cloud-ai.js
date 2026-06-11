@@ -9,6 +9,7 @@ const {
   getGroqSpeechApiKey,
   getGroqTextApiKey,
 } = require("./env");
+const { getAssistantIdentityLine } = require("./assistant-identity");
 const { GROQ_MODELS } = require("./groq-models");
 const { sanitizeAssistantText } = require("./response-sanitizer");
 
@@ -266,7 +267,7 @@ async function planActionWithGroq(transcript, context) {
   }
 
   const systemPrompt =
-    "You are an assistant that returns strict JSON only. The user may speak English, Hindi, Urdu, or Hinglish. Choose one action from: open_notepad, open_calculator, open_vscode, search_web, open_website, locate_ui_element, explain_software, none. Return keys: action, argument, reply. Use current on-screen context first. If user asks to find/locate/show a button, tab, panel, menu, icon, or control, choose locate_ui_element and put only that target name in argument. Choose explain_software only when user explicitly asks for tutorial/guide/walkthrough/explain entire software.";
+    `${getAssistantIdentityLine()} Return strict JSON only. The user may speak English, Hindi, Urdu, or Hinglish. Choose one action from: open_notepad, open_calculator, open_vscode, search_web, open_website, locate_ui_element, explain_software, none. Return keys: action, argument, reply. Use current on-screen context first. If user asks to find/locate/show a button, tab, panel, menu, icon, or control, choose locate_ui_element and put only that target name in argument. Choose explain_software only when user explicitly asks for tutorial/guide/walkthrough/explain entire software.`;
 
   const screenUnderstanding = await summarizeScreenContextWithGroq(context?.screenFrame).catch(() => "");
 

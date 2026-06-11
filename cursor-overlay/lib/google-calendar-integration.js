@@ -1,60 +1,32 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const fs = require("fs");
-const http = require("http");
-const path = require("path");
 const { URLSearchParams } = require("url");
-const { getGoogleOAuthClientId, getGoogleOAuthClientSecret, getGroqTextApiKey } = require("./env");
+const { getGroqTextApiKey } = require("./env");
 const { GROQ_MODELS } = require("./groq-models");
 const { buildReply } = require("./reply-builder");
 const { sanitizeAssistantText } = require("./response-sanitizer");
 const { detectResponseLanguage, getLanguageInstruction, normalizeTranscript } = require("./text-utils");
 
 const CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
-const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
 const MAX_CONTEXT_EVENTS = 10;
 const WORKDAY_START_HOUR = 9;
 const WORKDAY_END_HOUR = 18;
 
-function createGoogleCalendarIntegration({ getUserDataPath, shell }) {
-  const tokenStorePath = () => path.join(getUserDataPath(), "google-calendar-token.json");
-
+function createGoogleCalendarIntegration({ googleAccount }) {
   function getStatus() {
-    const token = readToken();
+    const googleStatus = googleAccount.getStatus();
     return {
-      connected: Boolean(token?.refresh_token || token?.access_token),
-      email: token?.email || "",
+      connected: Boolean(googleStatus.services?.calendar?.connected),
+      email: googleStatus.email || "",
       scopes: CALENDAR_SCOPES,
     };
   }
 
   async function connect() {
-    const client = getOAuthClientConfig();
-    if (!client.ok) {
-      return client;
-    }
-
-    const authResult = await runLoopbackOAuth(client, shell);
-    const profile = await googleUserInfoFetch(authResult).catch(() => null);
-    const token = {
-      ...authResult,
-      email: profile?.email || "",
-      savedAt: Date.now(),
-    };
-    writeToken(token);
-
-    return {
-      ok: true,
-      email: token.email,
-      message: token.email ? `Google Calendar connected as ${token.email}.` : "Google Calendar connected.",
-    };
+    return googleAccount.enableService("calendar");
   }
 
   function disconnect() {
-    const filePath = tokenStorePath();
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    return { ok: true, message: "Google Calendar disconnected." };
+    return googleAccount.disableService("calendar");
   }
 
   async function answer(intent) {
@@ -175,94 +147,7 @@ function createGoogleCalendarIntegration({ getUserDataPath, shell }) {
   }
 
   async function calendarFetch(endpoint, options = {}) {
-    const token = options.token || (await getValidToken());
-    const response = await fetch(`https://www.googleapis.com${endpoint}`, {
-      method: options.method || "GET",
-      headers: {
-        Authorization: `Bearer ${token.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Google Calendar API failed (${response.status}): ${body}`);
-    }
-
-    return response.json();
-  }
-
-  async function getValidToken() {
-    const token = readToken();
-    if (!token) {
-      throw new Error("Google Calendar is not connected.");
-    }
-
-    if (token.access_token && Number(token.expiry_date || 0) - Date.now() > TOKEN_EXPIRY_SKEW_MS) {
-      return token;
-    }
-
-    if (!token.refresh_token) {
-      throw new Error("Google Calendar token expired. Please reconnect Google Calendar.");
-    }
-
-    const refreshed = await refreshAccessToken(token.refresh_token);
-    const nextToken = {
-      ...token,
-      ...refreshed,
-      refresh_token: refreshed.refresh_token || token.refresh_token,
-      savedAt: Date.now(),
-    };
-    writeToken(nextToken);
-    return nextToken;
-  }
-
-  async function refreshAccessToken(refreshToken) {
-    const client = getOAuthClientConfig();
-    if (!client.ok) {
-      throw new Error(client.message);
-    }
-
-    const response = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: client.clientId,
-        client_secret: client.clientSecret,
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Google Calendar refresh failed (${response.status}): ${body}`);
-    }
-
-    const data = await response.json();
-    return {
-      ...data,
-      expiry_date: Date.now() + Number(data.expires_in || 0) * 1000,
-    };
-  }
-
-  function readToken() {
-    try {
-      const filePath = tokenStorePath();
-      if (!fs.existsSync(filePath)) {
-        return null;
-      }
-      return JSON.parse(fs.readFileSync(filePath, "utf8"));
-    } catch {
-      return null;
-    }
-  }
-
-  function writeToken(token) {
-    const filePath = tokenStorePath();
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(token, null, 2), "utf8");
+    return googleAccount.fetchJson("calendar", "https://www.googleapis.com", endpoint, options);
   }
 
   return {
@@ -464,131 +349,18 @@ function buildCalendarReply(type, language, values = {}) {
     english: {
       noEvents: `You do not have any calendar events for ${label}.`,
       noFreeSlots: `I do not see a clear free slot for ${label}.`,
-      notConnected: "Google Calendar is not connected yet. Open Integrations and connect Calendar first.",
+      notConnected: "Google Calendar is not enabled yet. Open Integrations, connect Google, then enable Calendar.",
       unsupported: "I can check Google Calendar, but I do not understand that schedule request yet.",
     },
     hinglish: {
       noEvents: `${label} ke liye calendar mein koi event nahi hai.`,
       noFreeSlots: `${label} ke liye clear free slot nahi dikh raha.`,
-      notConnected: "Google Calendar abhi connected nahi hai. Integrations mein jaake Calendar connect karo.",
+      notConnected: "Google Calendar abhi enabled nahi hai. Integrations mein Google connect karke Calendar enable karo.",
       unsupported: "Main Google Calendar check kar sakti hoon, but ye schedule request abhi clear nahi hai.",
     },
   };
 
   return replies[language]?.[type] || replies.english[type] || buildReply("unsupported", {}, language);
-}
-
-async function runLoopbackOAuth(client, shell) {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer();
-    let redirectUri = "";
-    const timeout = setTimeout(() => {
-      server.close();
-      reject(new Error("Google Calendar connection timed out."));
-    }, 2 * 60 * 1000);
-
-    server.on("request", async (request, response) => {
-      try {
-        const requestUrl = new URL(request.url, `http://${request.headers.host}`);
-        if (requestUrl.pathname !== "/oauth2callback") {
-          response.writeHead(404);
-          response.end("Not found");
-          return;
-        }
-
-        const code = requestUrl.searchParams.get("code");
-        const error = requestUrl.searchParams.get("error");
-        if (error || !code) {
-          throw new Error(error || "No OAuth code returned.");
-        }
-
-        response.writeHead(200, { "Content-Type": "text/html" });
-        response.end("<h2>Google Calendar connected.</h2><p>You can close this tab and return to AI Buddy.</p>");
-        clearTimeout(timeout);
-        server.close();
-
-        const token = await exchangeCodeForToken(client, code, redirectUri);
-        resolve(token);
-      } catch (error) {
-        clearTimeout(timeout);
-        server.close();
-        reject(error);
-      }
-    });
-
-    server.listen(0, "127.0.0.1", () => {
-      redirectUri = getRedirectUri(server);
-      const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-      authUrl.searchParams.set("client_id", client.clientId);
-      authUrl.searchParams.set("redirect_uri", redirectUri);
-      authUrl.searchParams.set("response_type", "code");
-      authUrl.searchParams.set("scope", CALENDAR_SCOPES.join(" "));
-      authUrl.searchParams.set("access_type", "offline");
-      authUrl.searchParams.set("prompt", "consent");
-      shell.openExternal(authUrl.toString());
-    });
-  });
-}
-
-function getRedirectUri(server) {
-  const address = server.address();
-  return `http://127.0.0.1:${address.port}/oauth2callback`;
-}
-
-async function exchangeCodeForToken(client, code, redirectUri) {
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: client.clientId,
-      client_secret: client.clientSecret,
-      code,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri,
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Google Calendar OAuth failed (${response.status}): ${body}`);
-  }
-
-  const data = await response.json();
-  return {
-    ...data,
-    expiry_date: Date.now() + Number(data.expires_in || 0) * 1000,
-  };
-}
-
-async function googleUserInfoFetch(token) {
-  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
-    headers: {
-      Authorization: `Bearer ${token.access_token}`,
-    },
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return response.json();
-}
-
-function getOAuthClientConfig() {
-  const clientId = getGoogleOAuthClientId();
-  const clientSecret = getGoogleOAuthClientSecret();
-  if (!clientId || !clientSecret) {
-    return {
-      ok: false,
-      message: "Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET to .env.local first.",
-    };
-  }
-
-  return {
-    clientId,
-    clientSecret,
-    ok: true,
-  };
 }
 
 function stripHtml(value) {

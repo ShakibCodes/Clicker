@@ -1,9 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const fs = require("fs");
-const http = require("http");
-const path = require("path");
 const { URLSearchParams } = require("url");
-const { getGoogleOAuthClientId, getGoogleOAuthClientSecret, getGroqTextApiKey } = require("./env");
+const { getGroqTextApiKey } = require("./env");
 const { GROQ_MODELS } = require("./groq-models");
 const { buildReply } = require("./reply-builder");
 const { sanitizeAssistantText } = require("./response-sanitizer");
@@ -13,54 +10,27 @@ const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.compose",
 ];
-const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
 const MAX_CONTEXT_MESSAGES = 8;
 
-function createGmailIntegration({ getUserDataPath, shell }) {
-  const tokenStorePath = () => path.join(getUserDataPath(), "gmail-token.json");
+function createGmailIntegration({ googleAccount }) {
   let lastEmailContext = null;
 
   function getStatus() {
-    const token = readToken();
+    const googleStatus = googleAccount.getStatus();
     return {
-      connected: Boolean(token?.refresh_token || token?.access_token),
-      email: token?.email || "",
+      connected: Boolean(googleStatus.services?.gmail?.connected),
+      email: googleStatus.email || "",
       scopes: GMAIL_SCOPES,
     };
   }
 
   async function connect() {
-    const client = getOAuthClientConfig();
-    if (!client.ok) {
-      return client;
-    }
-
-    const authResult = await runLoopbackOAuth(client, shell);
-    const profile = await gmailFetch("/gmail/v1/users/me/profile", {
-      token: authResult,
-    }).catch(() => null);
-
-    const token = {
-      ...authResult,
-      email: profile?.emailAddress || "",
-      savedAt: Date.now(),
-    };
-    writeToken(token);
-
-    return {
-      ok: true,
-      email: token.email,
-      message: token.email ? `Gmail connected as ${token.email}.` : "Gmail connected.",
-    };
+    return googleAccount.enableService("gmail");
   }
 
   function disconnect() {
-    const filePath = tokenStorePath();
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
     lastEmailContext = null;
-    return { ok: true, message: "Gmail disconnected." };
+    return googleAccount.disableService("gmail");
   }
 
   async function answer(intent) {
@@ -328,100 +298,12 @@ function createGmailIntegration({ getUserDataPath, shell }) {
   }
 
   async function getProfile() {
-    const token = await getValidToken();
-    const profile = await gmailFetch("/gmail/v1/users/me/profile", { token });
+    const profile = await gmailFetch("/gmail/v1/users/me/profile");
     return profile || {};
   }
 
   async function gmailFetch(endpoint, options = {}) {
-    const token = options.token || (await getValidToken());
-    const response = await fetch(`https://gmail.googleapis.com${endpoint}`, {
-      method: options.method || "GET",
-      headers: {
-        Authorization: `Bearer ${token.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Gmail API failed (${response.status}): ${body}`);
-    }
-
-    return response.json();
-  }
-
-  async function getValidToken() {
-    const token = readToken();
-    if (!token) {
-      throw new Error("Gmail is not connected.");
-    }
-
-    if (token.access_token && Number(token.expiry_date || 0) - Date.now() > TOKEN_EXPIRY_SKEW_MS) {
-      return token;
-    }
-
-    if (!token.refresh_token) {
-      throw new Error("Gmail token expired. Please reconnect Gmail.");
-    }
-
-    const refreshed = await refreshAccessToken(token.refresh_token);
-    const nextToken = {
-      ...token,
-      ...refreshed,
-      refresh_token: refreshed.refresh_token || token.refresh_token,
-      savedAt: Date.now(),
-    };
-    writeToken(nextToken);
-    return nextToken;
-  }
-
-  async function refreshAccessToken(refreshToken) {
-    const client = getOAuthClientConfig();
-    if (!client.ok) {
-      throw new Error(client.message);
-    }
-
-    const response = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: client.clientId,
-        client_secret: client.clientSecret,
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Gmail refresh failed (${response.status}): ${body}`);
-    }
-
-    const data = await response.json();
-    return {
-      ...data,
-      expiry_date: Date.now() + Number(data.expires_in || 0) * 1000,
-    };
-  }
-
-  function readToken() {
-    try {
-      const filePath = tokenStorePath();
-      if (!fs.existsSync(filePath)) {
-        return null;
-      }
-      return JSON.parse(fs.readFileSync(filePath, "utf8"));
-    } catch {
-      return null;
-    }
-  }
-
-  function writeToken(token) {
-    const filePath = tokenStorePath();
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(token, null, 2), "utf8");
+    return googleAccount.fetchJson("gmail", "https://gmail.googleapis.com", endpoint, options);
   }
 
   return {
@@ -487,105 +369,6 @@ function extractGmailIntent(transcript) {
   }
 
   return null;
-}
-
-async function runLoopbackOAuth(client, shell) {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer();
-    let redirectUri = "";
-    const timeout = setTimeout(() => {
-      server.close();
-      reject(new Error("Gmail connection timed out."));
-    }, 2 * 60 * 1000);
-
-    server.on("request", async (request, response) => {
-      try {
-        const requestUrl = new URL(request.url, `http://${request.headers.host}`);
-        if (requestUrl.pathname !== "/oauth2callback") {
-          response.writeHead(404);
-          response.end("Not found");
-          return;
-        }
-
-        const code = requestUrl.searchParams.get("code");
-        const error = requestUrl.searchParams.get("error");
-        if (error || !code) {
-          throw new Error(error || "No OAuth code returned.");
-        }
-
-        response.writeHead(200, { "Content-Type": "text/html" });
-        response.end("<h2>Gmail connected.</h2><p>You can close this tab and return to AI Buddy.</p>");
-        clearTimeout(timeout);
-        server.close();
-
-        const token = await exchangeCodeForToken(client, code, redirectUri);
-        resolve(token);
-      } catch (error) {
-        clearTimeout(timeout);
-        server.close();
-        reject(error);
-      }
-    });
-
-    server.listen(0, "127.0.0.1", () => {
-      redirectUri = getRedirectUri(server);
-      const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-      authUrl.searchParams.set("client_id", client.clientId);
-      authUrl.searchParams.set("redirect_uri", redirectUri);
-      authUrl.searchParams.set("response_type", "code");
-      authUrl.searchParams.set("scope", GMAIL_SCOPES.join(" "));
-      authUrl.searchParams.set("access_type", "offline");
-      authUrl.searchParams.set("prompt", "consent");
-      shell.openExternal(authUrl.toString());
-    });
-  });
-}
-
-function getRedirectUri(server) {
-  const address = server.address();
-  return `http://127.0.0.1:${address.port}/oauth2callback`;
-}
-
-async function exchangeCodeForToken(client, code, redirectUri) {
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: client.clientId,
-      client_secret: client.clientSecret,
-      code,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri,
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Gmail OAuth failed (${response.status}): ${body}`);
-  }
-
-  const data = await response.json();
-  return {
-    ...data,
-    expiry_date: Date.now() + Number(data.expires_in || 0) * 1000,
-  };
-}
-
-function getOAuthClientConfig() {
-  const clientId = getGoogleOAuthClientId();
-  const clientSecret = getGoogleOAuthClientSecret();
-  if (!clientId || !clientSecret) {
-    return {
-      ok: false,
-      message: "Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET to .env.local first.",
-    };
-  }
-
-  return {
-    clientId,
-    clientSecret,
-    ok: true,
-  };
 }
 
 function parseGmailMessage(message) {
@@ -678,7 +461,7 @@ function buildGmailReply(type, language, values = {}) {
       noImportant: "I did not find anything that looks clearly important right now.",
       noMessages: "I did not find any matching emails right now.",
       noReplyTarget: "I need an email context first. Ask me about recent or important emails, then I can draft a reply.",
-      notConnected: "Gmail is not connected yet. Open Integrations and connect Gmail first.",
+      notConnected: "Gmail is not enabled yet. Open Integrations, connect Google, then enable Gmail.",
       unsupported: "I can check Gmail, but I do not understand that email request yet.",
     },
     hindi: {
@@ -702,7 +485,7 @@ function buildGmailReply(type, language, values = {}) {
       noImportant: "Abhi mujhe koi clearly important email nahi mili.",
       noMessages: "Abhi mujhe matching emails nahi mili.",
       noReplyTarget: "Pehle email context chahiye. Recent ya important emails pucho, phir main reply draft kar dungi.",
-      notConnected: "Gmail abhi connected nahi hai. Integrations mein jaake Gmail connect karo.",
+      notConnected: "Gmail abhi enabled nahi hai. Integrations mein Google connect karke Gmail enable karo.",
       unsupported: "Main Gmail check kar sakti hoon, but ye email request abhi clear nahi hai.",
     },
   };

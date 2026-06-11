@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cursor Overlay</title>
+    <title>L.A.R.V.I.S. Overlay</title>
     <style>
       html,
       body {
@@ -351,6 +351,11 @@
         transform: translateY(-1px);
       }
 
+      .integration-item.google-account {
+        grid-column: 1 / 3;
+        min-height: 66px;
+      }
+
       .integration-item span {
         color: #a1a1aa;
         font:
@@ -667,20 +672,20 @@
     </style>
   </head>
   <body>
-    <section id="assistant-notch" aria-label="AI Buddy controls">
+    <section id="assistant-notch" aria-label="L.A.R.V.I.S. controls">
       <div class="notch-grip" aria-hidden="true"></div>
       <div class="notch-content">
         <div class="notch-view active" data-notch-view="home">
           <div class="notch-header">
             <div class="notch-brand">
               <span class="notch-orb" aria-hidden="true"></span>
-              <strong>AI Buddy</strong>
+              <strong>L.A.R.V.I.S.</strong>
             </div>
             <div id="assistant-status" class="notch-status">Ready</div>
           </div>
           <div class="notch-scroll">
             <div class="notch-grid">
-              <button class="notch-tile" type="button" data-notch-target="voice">AI Voice<span>ElevenLabs + Gemini</span></button>
+              <button class="notch-tile" type="button" data-notch-target="voice">Voice<span>ElevenLabs + Gemini</span></button>
               <button class="notch-tile" type="button" data-notch-target="integrations">Integrations<span>Connected apps</span></button>
               <button class="notch-tile" type="button" data-notch-target="connectors">Connectors<span>Web and tools</span></button>
               <button class="notch-tile" type="button" data-notch-target="commands">Commands<span>Open, search, guide</span></button>
@@ -696,6 +701,22 @@
           </div>
           <div class="notch-scroll">
             <div class="integration-list">
+              <div class="integration-item google-account" style="--integration-glow: rgba(66, 133, 244, 0.2)">
+              <div class="integration-logo" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img">
+                  <path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.2 3-7.3Z" />
+                  <path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.5L15.4 17c-.9.6-2 1-3.4 1a6 6 0 0 1-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22Z" />
+                  <path fill="#FBBC04" d="M6.4 13.9a6 6 0 0 1 0-3.8V7.5H3.1a10 10 0 0 0 0 9l3.3-2.6Z" />
+                  <path fill="#EA4335" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.8-2.8A9.5 9.5 0 0 0 12 2a10 10 0 0 0-8.9 5.5l3.3 2.6A6 6 0 0 1 12 6Z" />
+                </svg>
+              </div>
+              <div class="integration-meta">
+                <div class="integration-title">Google Account</div>
+                <span>Shared sign-in for Google services</span>
+              </div>
+              <button id="google-connect-button" class="integration-action" type="button">Connect</button>
+              <div id="google-account-status" class="integration-chip">Not connected</div>
+              </div>
               <div class="integration-item" style="--integration-glow: rgba(234, 67, 53, 0.18)">
               <div class="integration-logo" aria-hidden="true">
                 <svg viewBox="0 0 24 24" role="img">
@@ -709,7 +730,7 @@
                 <div class="integration-title">Gmail</div>
                 <span>Read, summarize, draft</span>
               </div>
-              <button id="gmail-connect-button" class="integration-action" type="button">Connect</button>
+              <button id="gmail-connect-button" class="integration-action" type="button">Enable</button>
               <div id="gmail-integration-status" class="integration-chip">Not connected</div>
               </div>
               <div class="integration-item" style="--integration-glow: rgba(66, 133, 244, 0.18)">
@@ -727,7 +748,7 @@
                 <div class="integration-title">Google Calendar</div>
                 <span>Meetings and schedule</span>
               </div>
-              <button id="calendar-connect-button" class="integration-action" type="button">Connect</button>
+              <button id="calendar-connect-button" class="integration-action" type="button">Enable</button>
               <div id="calendar-integration-status" class="integration-chip">Not connected</div>
               </div>
               <div class="integration-item" style="--integration-glow: rgba(52, 168, 83, 0.18)">
@@ -782,7 +803,7 @@
         <div class="notch-view" data-notch-view="voice">
           <div class="notch-title-row">
             <button class="notch-back" type="button" data-notch-back aria-label="Back">‹</button>
-            <strong>AI Voice</strong>
+            <strong>Voice</strong>
             <div id="voice-stack-status" class="notch-status">Checking</div>
           </div>
           <div class="notch-scroll">
@@ -804,7 +825,7 @@
               <div id="gemini-voice-badge" class="voice-badge">Checking</div>
               </div>
               <div class="voice-note">
-                If ElevenLabs hits quota, credits, billing, or rate limits, Buddy automatically speaks with Gemini instead.
+                If ElevenLabs hits quota, credits, billing, or rate limits, L.A.R.V.I.S. automatically speaks with Gemini instead.
               </div>
             </div>
           </div>
