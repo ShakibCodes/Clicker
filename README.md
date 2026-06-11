@@ -4,6 +4,8 @@
 
 L.A.R.V.I.S. is a desktop voice companion that stays with you as a lightweight overlay, listens on demand, understands what is happening on your screen, and routes your request to the right capability: casual conversation, web knowledge, app launching, browser tasks, Gmail, Google Calendar, guided UI tours, or spoken replies.
 
+There is a small wink here to JARVIS from Iron Man: not the armor, not the billionaire lab, just the feeling of a calm intelligence nearby when your hands are already busy.
+
 This project combines a **Next.js identity surface** with an **Electron-powered Windows cursor overlay**. The overlay follows the cursor, expands into a compact control notch, captures voice, transcribes speech through Groq, reasons over the request, and speaks back through ElevenLabs with Gemini TTS as a fallback.
 
 ---
